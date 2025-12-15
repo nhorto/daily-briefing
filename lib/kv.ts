@@ -1,0 +1,223 @@
+/**
+ * Vercel KV Storage Layer
+ * Handles all interactions with Vercel KV (Redis)
+ * Falls back to in-memory storage for local development
+ */
+
+import { kv } from '@vercel/kv';
+import type { Briefing, Source } from './types';
+
+// Check if KV is configured
+const hasKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
+
+// In-memory storage fallback for local development
+const localStore = new Map<string, any>();
+
+// Storage abstraction layer
+const store = {
+  async get<T>(key: string): Promise<T | null> {
+    if (hasKV) {
+      return await kv.get<T>(key);
+    }
+    return localStore.get(key) ?? null;
+  },
+
+  async set(key: string, value: any, options?: { ex?: number }): Promise<void> {
+    if (hasKV) {
+      await kv.set(key, value, options);
+    } else {
+      localStore.set(key, value);
+      // For local storage, we ignore TTL options
+    }
+  },
+
+  async del(key: string): Promise<void> {
+    if (hasKV) {
+      await kv.del(key);
+    } else {
+      localStore.delete(key);
+    }
+  },
+};
+
+console.log(`[KV] Using ${hasKV ? 'Vercel KV' : 'local in-memory'} storage`);
+
+// KV Key Constants
+const KEYS = {
+  BRIEFING_TODAY: 'briefing:today',
+  SOURCES_CONFIG: 'sources:config',
+  briefingByDate: (date: string) => `briefing:${date}`,
+};
+
+// TTL Constants (in seconds)
+const TTL = {
+  DAY: 86400, // 24 hours
+  WEEK: 604800, // 7 days
+};
+
+/**
+ * Store today's briefing with 24-hour auto-expiration
+ */
+export async function storeBriefing(briefing: Briefing): Promise<void> {
+  try {
+    // Store as "today's briefing" with 24h expiration
+    await store.set(KEYS.BRIEFING_TODAY, JSON.stringify(briefing), {
+      ex: TTL.DAY,
+    });
+
+    // Also store by specific date with 7-day expiration (for short-term history)
+    const dateKey = KEYS.briefingByDate(briefing.date);
+    await store.set(dateKey, JSON.stringify(briefing), {
+      ex: TTL.WEEK,
+    });
+
+    console.log(`[KV] Stored briefing for ${briefing.date}`);
+  } catch (error) {
+    console.error('[KV] Error storing briefing:', error);
+    throw new Error('Failed to store briefing in KV');
+  }
+}
+
+/**
+ * Retrieve today's briefing
+ */
+export async function getTodaysBriefing(): Promise<Briefing | null> {
+  try {
+    const data = await store.get<string>(KEYS.BRIEFING_TODAY);
+    if (!data) return null;
+
+    const briefing = typeof data === 'string' ? JSON.parse(data) : data;
+    return briefing as Briefing;
+  } catch (error) {
+    console.error("[KV] Error getting today's briefing:", error);
+    return null;
+  }
+}
+
+/**
+ * Retrieve briefing by specific date
+ */
+export async function getBriefingByDate(date: string): Promise<Briefing | null> {
+  try {
+    const data = await store.get<string>(KEYS.briefingByDate(date));
+    if (!data) return null;
+
+    const briefing = typeof data === 'string' ? JSON.parse(data) : data;
+    return briefing as Briefing;
+  } catch (error) {
+    console.error(`[KV] Error getting briefing for ${date}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Store source configuration (no expiration)
+ */
+export async function storeSources(sources: Source[]): Promise<void> {
+  try {
+    await store.set(KEYS.SOURCES_CONFIG, JSON.stringify(sources));
+    console.log(`[KV] Stored ${sources.length} sources`);
+  } catch (error) {
+    console.error('[KV] Error storing sources:', error);
+    throw new Error('Failed to store sources in KV');
+  }
+}
+
+/**
+ * Retrieve all configured sources
+ */
+export async function getSources(): Promise<Source[]> {
+  try {
+    const data = await store.get<string>(KEYS.SOURCES_CONFIG);
+    if (!data) return [];
+
+    const sources = typeof data === 'string' ? JSON.parse(data) : data;
+    return sources as Source[];
+  } catch (error) {
+    console.error('[KV] Error getting sources:', error);
+    return [];
+  }
+}
+
+/**
+ * Get active sources only
+ */
+export async function getActiveSources(): Promise<Source[]> {
+  const sources = await getSources();
+  return sources.filter((s) => s.isActive);
+}
+
+/**
+ * Add a new source
+ */
+export async function addSource(source: Source): Promise<void> {
+  const sources = await getSources();
+  sources.push(source);
+  await storeSources(sources);
+}
+
+/**
+ * Update an existing source
+ */
+export async function updateSource(sourceId: string, updates: Partial<Source>): Promise<void> {
+  const sources = await getSources();
+  const index = sources.findIndex((s) => s.id === sourceId);
+
+  if (index === -1) {
+    throw new Error(`Source with id ${sourceId} not found`);
+  }
+
+  sources[index] = { ...sources[index], ...updates };
+  await storeSources(sources);
+}
+
+/**
+ * Delete a source
+ */
+export async function deleteSource(sourceId: string): Promise<void> {
+  const sources = await getSources();
+  const filtered = sources.filter((s) => s.id !== sourceId);
+
+  if (filtered.length === sources.length) {
+    throw new Error(`Source with id ${sourceId} not found`);
+  }
+
+  await storeSources(filtered);
+}
+
+/**
+ * Update last fetched timestamp for a source
+ */
+export async function updateSourceLastFetched(sourceId: string, timestamp: string): Promise<void> {
+  await updateSource(sourceId, { lastFetchedAt: timestamp });
+}
+
+/**
+ * Clear all briefings (for testing/development)
+ */
+export async function clearAllBriefings(): Promise<void> {
+  try {
+    await store.del(KEYS.BRIEFING_TODAY);
+    console.log('[KV] Cleared all briefings');
+  } catch (error) {
+    console.error('[KV] Error clearing briefings:', error);
+  }
+}
+
+/**
+ * Health check - verify KV connection
+ */
+export async function healthCheck(): Promise<boolean> {
+  try {
+    const testKey = 'health:check';
+    const testValue = Date.now().toString();
+
+    await store.set(testKey, testValue, { ex: 10 });
+    const retrieved = await store.get(testKey);
+
+    return retrieved === testValue;
+  } catch (error) {
+    console.error('[KV] Health check failed:', error);
+    return false;
+  }
+}
