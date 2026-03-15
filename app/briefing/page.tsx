@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import type { Briefing, Article } from '@/lib/types';
-import ClusterCard from '@/components/ClusterCard';
 import ArticleCard from '@/components/ArticleCard';
 import ChatPanel from '@/components/ChatPanel';
 import DashboardLayout from '@/components/DashboardLayout';
+import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import StatCard from '@/components/ui/StatCard';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 
@@ -13,11 +13,12 @@ export default function BriefingPage() {
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatClusterId, setChatClusterId] = useState<string | undefined>();
+  const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchBriefing();
+    fetchReadIds();
   }, []);
 
   async function fetchBriefing() {
@@ -39,14 +40,23 @@ export default function BriefingPage() {
     }
   }
 
+  async function fetchReadIds() {
+    try {
+      const response = await fetch('/api/articles/read');
+      const data = await response.json();
+      if (data.success && data.readIds) {
+        setReadIds(new Set(data.readIds));
+      }
+    } catch (err) {
+      console.error('Failed to fetch read IDs:', err);
+    }
+  }
+
   async function regenerateBriefing() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/cron/aggregate', {
-        method: 'POST',
-      });
-
+      const response = await fetch('/api/cron/aggregate', { method: 'POST' });
       const data = await response.json();
 
       if (!response.ok || !data.success) {
@@ -60,22 +70,77 @@ export default function BriefingPage() {
     }
   }
 
-  function handleAskAboutTopic(clusterId: string) {
-    setChatClusterId(clusterId);
-    setChatOpen(true);
-  }
+  // Flatten all articles from clusters + individual, sorted by time descending
+  const allArticles: Article[] = useMemo(() => {
+    if (!briefing) return [];
+    const articles = [
+      ...briefing.clusters.flatMap((c) => c.articles),
+      ...briefing.individualArticles,
+    ];
+    return articles.sort(
+      (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+    );
+  }, [briefing]);
 
-  function handleOpenGlobalChat() {
-    setChatClusterId(undefined);
-    setChatOpen(true);
-  }
+  // Filtered articles based on selected sources
+  const filteredArticles = useMemo(() => {
+    if (selectedSources.size === 0) return allArticles;
+    return allArticles.filter((a) => selectedSources.has(a.sourceName));
+  }, [allArticles, selectedSources]);
 
-  const allArticles: Article[] = briefing
-    ? [
-        ...briefing.clusters.flatMap((c) => c.articles),
-        ...briefing.individualArticles,
-      ]
-    : [];
+  const handleToggleSource = useCallback((sourceName: string) => {
+    setSelectedSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(sourceName)) {
+        next.delete(sourceName);
+      } else {
+        next.add(sourceName);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearFilters = useCallback(() => {
+    setSelectedSources(new Set());
+  }, []);
+
+  const handleMarkRead = useCallback(async (articleId: string) => {
+    if (readIds.has(articleId)) return;
+
+    // Optimistic update
+    setReadIds((prev) => new Set([...prev, articleId]));
+
+    try {
+      await fetch('/api/articles/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ articleId }),
+      });
+    } catch (err) {
+      console.error('Failed to mark article as read:', err);
+    }
+  }, [readIds]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    if (!briefing) return;
+
+    const allArticleIds = allArticles.map((a) => a.id);
+
+    // Optimistic update
+    setReadIds(new Set(allArticleIds));
+
+    try {
+      await fetch('/api/articles/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ articleIds: allArticleIds }),
+      });
+    } catch (err) {
+      console.error('Failed to mark all articles as read:', err);
+    }
+  }, [briefing, allArticles]);
+
+  const unreadCount = allArticles.filter((a) => !readIds.has(a.id)).length;
 
   return (
     <DashboardLayout>
@@ -100,117 +165,171 @@ export default function BriefingPage() {
           </div>
         </div>
       ) : (
-        <div className="px-4 sm:px-6 py-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">
-                Today's Briefing
-              </h1>
-              <p className="text-text-muted text-sm mt-1">
-                {new Date(briefing.date).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </p>
-            </div>
-            <button
-              onClick={regenerateBriefing}
-              className="px-4 py-2 bg-bg-elevated text-text-secondary rounded-lg hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
-            >
-              Regenerate
-            </button>
-          </div>
-
-          {/* Stats Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <StatCard value={briefing.totalArticles} label="Articles" />
-            <StatCard value={briefing.totalSources} label="Sources" />
-            <StatCard value={briefing.totalClusters} label="Clusters" />
-            <StatCard
-              value={new Date(briefing.generatedAt).toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-              })}
-              label="Generated"
+        <div className="flex h-[calc(100vh-3.5rem)]">
+          {/* Source Filter Sidebar */}
+          <div className="w-48 flex-shrink-0 border-r border-border hidden md:block">
+            <SourceFilterSidebar
+              articles={allArticles}
+              selectedSources={selectedSources}
+              onToggleSource={handleToggleSource}
+              onClearFilters={handleClearFilters}
             />
           </div>
 
-          {/* Global Chat Bar */}
-          <button
-            onClick={handleOpenGlobalChat}
-            className="w-full px-4 py-3 bg-bg-surface border border-border rounded-lg text-left text-text-muted hover:bg-bg-elevated hover:border-border-hover transition-colors mb-8"
-          >
-            Ask about today's content...
-          </button>
+          {/* Article Feed */}
+          <div className="flex-1 overflow-y-auto min-w-0">
+            <div className="px-4 sm:px-6 py-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h1 className="text-xl font-bold text-text-primary">
+                    Today's Briefing
+                  </h1>
+                  <p className="text-text-muted text-sm mt-0.5">
+                    {new Date(briefing.date).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })}
+                    {unreadCount > 0 && (
+                      <span className="ml-2 text-status-new">{unreadCount} new</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="px-3 py-1.5 bg-bg-elevated text-text-secondary rounded-lg hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
+                    >
+                      Mark All Read
+                    </button>
+                  )}
+                  <button
+                    onClick={regenerateBriefing}
+                    className="px-3 py-1.5 bg-bg-elevated text-text-secondary rounded-lg hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              </div>
 
-          {/* Topic Clusters */}
-          {briefing.clusters.length > 0 && (
-            <section className="mb-10">
-              <h2 className="text-lg font-bold text-text-primary mb-4">
-                Topic Clusters ({briefing.clusters.length})
-              </h2>
-              <div className="space-y-4">
-                {briefing.clusters.map((cluster) => (
-                  <ClusterCard
-                    key={cluster.id}
-                    cluster={cluster}
-                    onAskAboutTopic={handleAskAboutTopic}
-                  />
+              {/* Stats Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                <StatCard value={briefing.totalArticles} label="Articles" />
+                <StatCard value={briefing.totalSources} label="Sources" />
+                <StatCard value={briefing.totalClusters} label="Clusters" />
+                <StatCard
+                  value={new Date(briefing.generatedAt).toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
+                  label="Generated"
+                />
+              </div>
+
+              {/* Mobile source filter */}
+              <div className="md:hidden mb-4 flex flex-wrap gap-1.5">
+                <button
+                  onClick={handleClearFilters}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedSources.size === 0
+                      ? 'bg-accent-muted text-text-primary'
+                      : 'bg-bg-elevated text-text-secondary'
+                  }`}
+                >
+                  All
+                </button>
+                {Array.from(new Set(allArticles.map((a) => a.sourceName))).map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => handleToggleSource(name)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      selectedSources.has(name)
+                        ? 'bg-accent-muted text-text-primary'
+                        : 'bg-bg-elevated text-text-secondary'
+                    }`}
+                  >
+                    {name}
+                  </button>
                 ))}
               </div>
-            </section>
-          )}
 
-          {/* Individual Articles */}
-          {briefing.individualArticles.length > 0 && (
-            <section>
-              <h2 className="text-lg font-bold text-text-primary mb-4">
-                Individual Articles ({briefing.individualArticles.length})
-              </h2>
-              <div className="grid md:grid-cols-2 gap-4">
-                {briefing.individualArticles.map((article) => (
-                  <ArticleCard key={article.id} article={article} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Empty State */}
-          {briefing.clusters.length === 0 && briefing.individualArticles.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">📭</div>
-              <p className="text-text-secondary">
-                No content found for today. Check back later!
-              </p>
+              {/* Article Feed */}
+              {filteredArticles.length > 0 ? (
+                <div className="space-y-3">
+                  {filteredArticles.map((article) => (
+                    <ArticleCard
+                      key={article.id}
+                      article={article}
+                      isRead={readIds.has(article.id)}
+                      onMarkRead={handleMarkRead}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-text-secondary">
+                    {selectedSources.size > 0
+                      ? 'No articles match the selected sources.'
+                      : 'No content found for today. Check back later!'}
+                  </p>
+                  {selectedSources.size > 0 && (
+                    <button
+                      onClick={handleClearFilters}
+                      className="mt-3 text-accent hover:text-accent-hover transition-colors text-sm font-medium"
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+          </div>
+
+          {/* Chat Panel */}
+          <div className="w-[380px] flex-shrink-0 border-l border-border hidden lg:block">
+            <ChatPanel
+              mode="briefing"
+              articles={filteredArticles}
+              className="h-full rounded-none border-0"
+            />
+          </div>
         </div>
       )}
 
-      {/* Chat Panel */}
-      <ChatPanel
-        mode="briefing"
-        articles={allArticles}
-        clusterId={chatClusterId}
-        isOpen={chatOpen}
-        onClose={() => setChatOpen(false)}
-      />
-
-      {/* Floating Chat Button */}
+      {/* Floating Chat Button - mobile/tablet */}
       {!loading && briefing && (
-        <button
-          onClick={handleOpenGlobalChat}
-          className="fixed bottom-6 right-6 w-14 h-14 bg-accent text-bg-primary rounded-full shadow-lg hover:bg-accent-hover transition-colors flex items-center justify-center text-xl"
-          title="Open chat"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        </button>
+        <MobileChatButton articles={filteredArticles} />
       )}
     </DashboardLayout>
+  );
+}
+
+function MobileChatButton({ articles }: { articles: Article[] }) {
+  const [chatOpen, setChatOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        onClick={() => setChatOpen(true)}
+        className="fixed bottom-6 right-6 w-14 h-14 bg-accent text-bg-primary rounded-full shadow-lg hover:bg-accent-hover transition-colors flex items-center justify-center text-xl lg:hidden"
+        title="Open chat"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+      </button>
+
+      {chatOpen && (
+        <ChatPanel
+          mode="briefing"
+          articles={articles}
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
+    </>
   );
 }

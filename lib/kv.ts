@@ -47,6 +47,7 @@ const KEYS = {
   BRIEFING_TODAY: 'briefing:today',
   INTELLIGENCE_TODAY: 'intelligence:today',
   SOURCES_CONFIG: 'sources:config',
+  READ_ARTICLES: 'read:articles',
   briefingByDate: (date: string) => `briefing:${date}`,
 };
 
@@ -54,6 +55,7 @@ const KEYS = {
 const TTL = {
   DAY: 86400, // 24 hours
   WEEK: 604800, // 7 days
+  MONTH: 2592000, // 30 days
 };
 
 /**
@@ -221,6 +223,54 @@ export async function getTodaysIntelligence(): Promise<DailyIntelligence | null>
   } catch (error) {
     console.error("[KV] Error getting today's intelligence:", error);
     return null;
+  }
+}
+
+/**
+ * Mark a single article as read
+ */
+export async function markArticleRead(articleId: string): Promise<void> {
+  try {
+    const readIds = await getReadArticleIds();
+    if (!readIds.includes(articleId)) {
+      readIds.push(articleId);
+      await store.set(KEYS.READ_ARTICLES, JSON.stringify(readIds), { ex: TTL.MONTH });
+    }
+  } catch (error) {
+    console.error('[KV] Error marking article as read:', error);
+    throw new Error('Failed to mark article as read');
+  }
+}
+
+/**
+ * Get all read article IDs
+ */
+export async function getReadArticleIds(): Promise<string[]> {
+  try {
+    const data = await store.get<string>(KEYS.READ_ARTICLES);
+    if (!data) return [];
+    const ids = typeof data === 'string' ? JSON.parse(data) : data;
+    return ids as string[];
+  } catch (error) {
+    console.error('[KV] Error getting read article IDs:', error);
+    return [];
+  }
+}
+
+/**
+ * Mark multiple articles as read
+ */
+export async function markAllArticlesRead(articleIds: string[]): Promise<void> {
+  try {
+    const readIds = await getReadArticleIds();
+    const readSet = new Set(readIds);
+    for (const id of articleIds) {
+      readSet.add(id);
+    }
+    await store.set(KEYS.READ_ARTICLES, JSON.stringify([...readSet]), { ex: TTL.MONTH });
+  } catch (error) {
+    console.error('[KV] Error marking all articles as read:', error);
+    throw new Error('Failed to mark articles as read');
   }
 }
 

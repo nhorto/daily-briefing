@@ -60,12 +60,15 @@ export function getFreshnessCategory(isoTimestamp: string): 'fresh' | 'recent' |
 /**
  * Get time window for daily briefing
  * Returns { start, end } timestamps for the briefing period
+ * Window runs from 6 AM previous day to 6 AM current day
  */
 export function getBriefingTimeWindow(dateString: string): { start: string; end: string } {
   const date = parseISO(dateString);
-  const start = startOfDay(date);
-  const end = new Date(start);
-  end.setHours(23, 59, 59, 999);
+  const end = new Date(date);
+  end.setHours(6, 0, 0, 0);
+
+  const start = new Date(end);
+  start.setDate(start.getDate() - 1);
 
   return {
     start: start.toISOString(),

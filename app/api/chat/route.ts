@@ -4,7 +4,7 @@
  * Supports both high-level questions and article-specific queries
  */
 
-import { streamText } from 'ai';
+import { streamText, convertToModelMessages } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { NextRequest } from 'next/server';
 import type { Article } from '@/lib/types';
@@ -13,7 +13,8 @@ export const runtime = 'edge';
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, articles, clusterId } = await req.json();
+    const body = await req.json();
+    const { messages, articles, clusterId } = body;
 
     if (!messages || messages.length === 0) {
       return new Response('No messages provided', { status: 400 });
@@ -44,10 +45,13 @@ Remember:
 - Be helpful and conversational
 - If multiple sources cover the same topic, synthesize their perspectives`;
 
+    // Convert UI messages to model messages (handles both old {content} and new {parts} formats)
+    const modelMessages = convertToModelMessages(messages);
+
     const result = streamText({
       model: openai('gpt-4o'),
       system: systemPrompt,
-      messages,
+      messages: modelMessages,
       temperature: 0.7,
       maxOutputTokens: 1000,
     });

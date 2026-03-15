@@ -15,6 +15,7 @@ export default function SourcesPage() {
     name: '',
     url: '',
     authority: 50,
+    type: '',
   });
 
   useEffect(() => {
@@ -40,17 +41,26 @@ export default function SourcesPage() {
     e.preventDefault();
 
     try {
+      const payload: Record<string, unknown> = {
+        name: formData.name,
+        url: formData.url,
+        authority: formData.authority,
+      };
+      if (formData.type) {
+        payload.type = formData.type;
+      }
+
       const response = await fetch('/api/sources', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
 
       if (data.success) {
         await fetchSources();
-        setFormData({ name: '', url: '', authority: 50 });
+        setFormData({ name: '', url: '', authority: 50, type: '' });
         setShowAddForm(false);
       } else {
         alert(`Error: ${data.error}`);
@@ -164,7 +174,27 @@ export default function SourcesPage() {
                     className="w-full px-4 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent text-text-primary placeholder-text-muted"
                   />
                   <p className="text-xs text-text-muted mt-1">
-                    System will auto-detect if it's RSS/Atom feed or HTML webpage
+                    System will auto-detect if it's RSS/Atom feed, HTML webpage, or blog index
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-1">
+                    Source Type
+                  </label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    className="w-full px-4 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent text-text-primary"
+                  >
+                    <option value="">Auto-detect</option>
+                    <option value="rss">RSS Feed</option>
+                    <option value="atom">Atom Feed</option>
+                    <option value="html">HTML Page</option>
+                    <option value="blog">Blog Index</option>
+                  </select>
+                  <p className="text-xs text-text-muted mt-1">
+                    Leave as auto-detect unless you want to override the detected type
                   </p>
                 </div>
 
@@ -287,12 +317,16 @@ export default function SourcesPage() {
                 https://techcrunch.com) and the system will try to extract content
               </p>
               <p>
+                <strong className="text-text-primary">Blog Index Pages:</strong> Use the blog listing URL
+                (e.g., https://example.com/blog) - the system discovers and fetches individual articles from the page
+              </p>
+              <p>
                 <strong className="text-text-primary">Authority:</strong> Set 0-100 based on source credibility. Higher
                 authority sources are preferred as cluster representatives
               </p>
               <p>
                 <strong className="text-text-primary">Auto-detection:</strong> The system automatically detects feed type
-                (RSS/Atom/HTML) when you add a source
+                (RSS/Atom/HTML/Blog) when you add a source
               </p>
             </div>
           </Card>

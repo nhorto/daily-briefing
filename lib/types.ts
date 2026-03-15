@@ -2,7 +2,7 @@
  * Core TypeScript types for the Daily Briefing System
  */
 
-export type SourceType = 'rss' | 'atom' | 'html';
+export type SourceType = 'rss' | 'atom' | 'html' | 'blog';
 
 export type BriefingStatus = 'processing' | 'ready' | 'error';
 
