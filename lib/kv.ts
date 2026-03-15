@@ -5,7 +5,7 @@
  */
 
 import { kv } from '@vercel/kv';
-import type { Briefing, Source } from './types';
+import type { Briefing, DailyIntelligence, Source } from './types';
 
 // Check if KV is configured
 const hasKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
@@ -24,7 +24,7 @@ const store = {
 
   async set(key: string, value: any, options?: { ex?: number }): Promise<void> {
     if (hasKV) {
-      await kv.set(key, value, options);
+      await kv.set(key, value, options as any);
     } else {
       localStore.set(key, value);
       // For local storage, we ignore TTL options
@@ -45,6 +45,7 @@ console.log(`[KV] Using ${hasKV ? 'Vercel KV' : 'local in-memory'} storage`);
 // KV Key Constants
 const KEYS = {
   BRIEFING_TODAY: 'briefing:today',
+  INTELLIGENCE_TODAY: 'intelligence:today',
   SOURCES_CONFIG: 'sources:config',
   briefingByDate: (date: string) => `briefing:${date}`,
 };
@@ -167,7 +168,7 @@ export async function updateSource(sourceId: string, updates: Partial<Source>): 
     throw new Error(`Source with id ${sourceId} not found`);
   }
 
-  sources[index] = { ...sources[index], ...updates };
+  sources[index] = { ...sources[index]!, ...updates };
   await storeSources(sources);
 }
 
@@ -190,6 +191,37 @@ export async function deleteSource(sourceId: string): Promise<void> {
  */
 export async function updateSourceLastFetched(sourceId: string, timestamp: string): Promise<void> {
   await updateSource(sourceId, { lastFetchedAt: timestamp });
+}
+
+/**
+ * Store today's intelligence summary
+ */
+export async function storeIntelligence(intelligence: DailyIntelligence): Promise<void> {
+  try {
+    await store.set(KEYS.INTELLIGENCE_TODAY, JSON.stringify(intelligence), {
+      ex: TTL.DAY,
+    });
+    console.log('[KV] Stored intelligence summary');
+  } catch (error) {
+    console.error('[KV] Error storing intelligence:', error);
+    throw new Error('Failed to store intelligence in KV');
+  }
+}
+
+/**
+ * Retrieve today's intelligence summary
+ */
+export async function getTodaysIntelligence(): Promise<DailyIntelligence | null> {
+  try {
+    const data = await store.get<string>(KEYS.INTELLIGENCE_TODAY);
+    if (!data) return null;
+
+    const intelligence = typeof data === 'string' ? JSON.parse(data) : data;
+    return intelligence as DailyIntelligence;
+  } catch (error) {
+    console.error("[KV] Error getting today's intelligence:", error);
+    return null;
+  }
 }
 
 /**

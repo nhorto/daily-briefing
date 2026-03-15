@@ -117,7 +117,7 @@ async function fetchHTMLPage(source: Source, sinceTimestamp?: string): Promise<A
     {
       id: nanoid(),
       url: source.url,
-      title: cleanText(article.title),
+      title: cleanText(article.title ?? ''),
       excerpt: extractExcerpt(article.textContent || ''),
       author: article.byline || undefined,
       publishedAt: new Date().toISOString(), // HTML pages don't have pubDate
@@ -152,7 +152,7 @@ export async function fetchFromMultipleSources(
   const errors: Array<{ sourceId: string; sourceName: string; error: string }> = [];
 
   results.forEach((result, index) => {
-    const source = sources[index];
+    const source = sources[index]!;
 
     if (result.status === 'fulfilled') {
       articles.push(...result.value);
@@ -161,7 +161,7 @@ export async function fetchFromMultipleSources(
       errors.push({
         sourceId: source.id,
         sourceName: source.name,
-        error: result.reason.message || 'Unknown error',
+        error: result.reason?.message || 'Unknown error',
       });
     }
   });

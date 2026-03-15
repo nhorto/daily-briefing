@@ -25,7 +25,7 @@ export async function generateClusterSummary(articles: Article[]): Promise<strin
 
   if (articles.length === 1) {
     // For single-article clusters, just generate article summary
-    return generateArticleSummary(articles[0]);
+    return generateArticleSummary(articles[0]!);
   }
 
   // Construct prompt with all articles in the cluster

@@ -3,25 +3,85 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  /* Background layers */
+  --bg-primary: #0B0F1A;
+  --bg-surface: #111827;
+  --bg-elevated: #1F2937;
+  --bg-overlay: #374151;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Text */
+  --text-primary: #F9FAFB;
+  --text-secondary: #9CA3AF;
+  --text-muted: #6B7280;
+
+  /* Accent (electric blue/teal) */
+  --accent: #06B6D4;
+  --accent-hover: #22D3EE;
+  --accent-muted: #164E63;
+
+  /* Status */
+  --status-breaking: #EF4444;
+  --status-new: #10B981;
+  --status-warning: #F59E0B;
+
+  /* Borders */
+  --border: #1F2937;
+  --border-hover: #374151;
+
+  /* Source colors (rotating palette) */
+  --source-1: #06B6D4;
+  --source-2: #8B5CF6;
+  --source-3: #F59E0B;
+  --source-4: #10B981;
+  --source-5: #EF4444;
+  --source-6: #EC4899;
+  --source-7: #3B82F6;
+  --source-8: #F97316;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-overlay);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Skeleton animation */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
   }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-overlay) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.375rem;
 }

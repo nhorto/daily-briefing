@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import type { Briefing } from '@/lib/types';
-import { getActiveSources, storeBriefing, updateSourceLastFetched } from '@/lib/kv';
+import { getActiveSources, storeBriefing, storeIntelligence, updateSourceLastFetched } from '@/lib/kv';
 import { fetchFromMultipleSources } from '@/lib/services/aggregator';
 import {
   clusterArticles,
@@ -15,6 +15,7 @@ import {
   sortArticlesByTime,
 } from '@/lib/services/clustering';
 import { summarizeClusters, generateArticleSummaries } from '@/lib/services/summarizer';
+import { generateDailyIntelligence } from '@/lib/services/intelligence';
 import { getTodayDateString, getBriefingTimeWindow } from '@/lib/utils/date';
 
 export const maxDuration = 300; // 5 minutes max execution time
@@ -114,7 +115,18 @@ export async function POST(request: NextRequest) {
     // 9. Store briefing in KV
     await storeBriefing(briefing);
 
-    // 10. Update last fetched timestamps for sources
+    // 10. Generate AI intelligence summary
+    try {
+      console.log('[Cron] Generating daily intelligence summary...');
+      const intelligence = await generateDailyIntelligence(clusters, sortedIndividualArticles);
+      await storeIntelligence(intelligence);
+      console.log('[Cron] Intelligence summary generated and stored');
+    } catch (error) {
+      console.error('[Cron] Failed to generate intelligence summary:', error);
+      // Non-fatal: briefing still works without intelligence
+    }
+
+    // 11. Update last fetched timestamps for sources
     const now = new Date().toISOString();
     await Promise.all(
       sources.map((source) => updateSourceLastFetched(source.id, now))

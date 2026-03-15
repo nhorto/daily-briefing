@@ -4,14 +4,10 @@
  * Supports both high-level questions and article-specific queries
  */
 
-import { OpenAIStream, StreamingTextResponse } from 'ai';
-import OpenAI from 'openai';
+import { streamText } from 'ai';
+import { openai } from '@ai-sdk/openai';
 import { NextRequest } from 'next/server';
 import type { Article } from '@/lib/types';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export const runtime = 'edge';
 
@@ -48,21 +44,15 @@ Remember:
 - Be helpful and conversational
 - If multiple sources cover the same topic, synthesize their perspectives`;
 
-    // Create chat completion with streaming
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      stream: true,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages,
-      ],
+    const result = streamText({
+      model: openai('gpt-4o'),
+      system: systemPrompt,
+      messages,
       temperature: 0.7,
-      max_tokens: 1000,
+      maxOutputTokens: 1000,
     });
 
-    // Convert to streaming response
-    const stream = OpenAIStream(response);
-    return new StreamingTextResponse(stream);
+    return result.toTextStreamResponse();
   } catch (error) {
     console.error('[Chat API] Error:', error);
     return new Response((error as Error).message, { status: 500 });

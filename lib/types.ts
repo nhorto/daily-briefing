@@ -80,6 +80,21 @@ export interface Briefing {
 }
 
 /**
+ * AI-synthesized daily intelligence summary
+ */
+export interface DailyIntelligence {
+  topStories: string;
+  categories: Array<{
+    name: string;
+    icon: string;
+    summary: string;
+    articleIds: string[];
+    priority: number;
+  }>;
+  generatedAt: string;
+}
+
+/**
  * Chat Message for the chat interface
  */
 export interface ChatMessage {

@@ -81,7 +81,7 @@ function calculateAverageSimilarity(articles: Article[]): number {
 
   for (let i = 0; i < articles.length; i++) {
     for (let j = i + 1; j < articles.length; j++) {
-      totalSim += calculateArticleSimilarity(articles[i], articles[j]);
+      totalSim += calculateArticleSimilarity(articles[i]!, articles[j]!);
       count++;
     }
   }
