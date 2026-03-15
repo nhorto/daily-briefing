@@ -1,33 +1,37 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
+@theme {
   /* Background layers */
-  --bg-primary: #0B0F1A;
-  --bg-surface: #111827;
-  --bg-elevated: #1F2937;
-  --bg-overlay: #374151;
+  --color-bg-primary: #0B0F1A;
+  --color-bg-surface: #111827;
+  --color-bg-elevated: #1F2937;
+  --color-bg-overlay: #374151;
 
   /* Text */
-  --text-primary: #F9FAFB;
-  --text-secondary: #9CA3AF;
-  --text-muted: #6B7280;
+  --color-text-primary: #F9FAFB;
+  --color-text-secondary: #9CA3AF;
+  --color-text-muted: #6B7280;
 
   /* Accent (electric blue/teal) */
-  --accent: #06B6D4;
-  --accent-hover: #22D3EE;
-  --accent-muted: #164E63;
+  --color-accent: #06B6D4;
+  --color-accent-hover: #22D3EE;
+  --color-accent-muted: #164E63;
 
   /* Status */
-  --status-breaking: #EF4444;
-  --status-new: #10B981;
-  --status-warning: #F59E0B;
+  --color-status-breaking: #EF4444;
+  --color-status-new: #10B981;
+  --color-status-warning: #F59E0B;
 
   /* Borders */
-  --border: #1F2937;
-  --border-hover: #374151;
+  --color-border: #1F2937;
+  --color-border-hover: #374151;
 
+  /* Fonts */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+:root {
   /* Source colors (rotating palette) */
   --source-1: #06B6D4;
   --source-2: #8B5CF6;
@@ -40,9 +44,8 @@
 }
 
 body {
-  color: var(--text-primary);
-  background: var(--bg-primary);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
 }
 
 /* Scrollbar styling */
@@ -52,16 +55,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: var(--color-bg-primary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-overlay);
+  background: var(--color-bg-overlay);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: var(--color-text-muted);
 }
 
 /* Skeleton animation */
@@ -77,9 +80,9 @@ body {
 .skeleton {
   background: linear-gradient(
     90deg,
-    var(--bg-elevated) 25%,
-    var(--bg-overlay) 50%,
-    var(--bg-elevated) 75%
+    var(--color-bg-elevated) 25%,
+    var(--color-bg-overlay) 50%,
+    var(--color-bg-elevated) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;

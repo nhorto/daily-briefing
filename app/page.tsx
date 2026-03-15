@@ -118,12 +118,12 @@ export default function Home() {
           </div>
 
           {/* Right: Embedded Chat (35%) */}
-          <div className="lg:w-[35%] lg:min-w-[320px]">
+          <div className="lg:w-[35%] lg:min-w-[320px] lg:max-w-[420px]">
             <div className="lg:sticky lg:top-20">
               <ChatPanel
                 mode="global"
                 articles={allArticles}
-                className="h-[calc(100vh-6rem)] lg:h-[calc(100vh-6rem)]"
+                className="h-[500px] lg:h-[calc(100vh-7rem)]"
               />
             </div>
           </div>
