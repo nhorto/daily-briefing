@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { Source } from '@/lib/types';
+import type { Source, Briefing } from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
+import StatsRow from '@/components/StatsRow';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 
 export default function SourcesPage() {
   const [sources, setSources] = useState<Source[]>([]);
+  const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -20,6 +22,7 @@ export default function SourcesPage() {
 
   useEffect(() => {
     fetchSources();
+    fetchBriefingStats();
   }, []);
 
   async function fetchSources() {
@@ -34,6 +37,18 @@ export default function SourcesPage() {
       console.error('Failed to fetch sources:', error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchBriefingStats() {
+    try {
+      const response = await fetch('/api/briefing');
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setBriefing(data.briefing);
+      }
+    } catch {
+      // Non-critical — stats just won't show
     }
   }
 
@@ -139,6 +154,18 @@ export default function SourcesPage() {
               {showAddForm ? 'Cancel' : '+ Add Source'}
             </button>
           </div>
+
+          {/* Briefing Stats */}
+          {briefing && (
+            <div className="mb-6">
+              <StatsRow
+                totalArticles={briefing.totalArticles}
+                totalSources={briefing.totalSources}
+                totalClusters={briefing.totalClusters}
+                generatedAt={briefing.generatedAt}
+              />
+            </div>
+          )}
 
           {/* Add Source Form */}
           {showAddForm && (

@@ -55,7 +55,7 @@ ${individualContext || 'None'}
 ## Instructions
 Produce a JSON response with this exact structure:
 {
-  "topStories": "A 2-3 paragraph synthesis of the most important developments today. Write in a direct, analytical tone. Highlight what matters and why.",
+  "topStories": "A 4-6 paragraph in-depth analysis of today's most important developments. For each major story, explain what happened, why it matters, and how it connects to broader industry or global trends. Provide enough context that a reader gets a real understanding of the significance of each development — not just headlines. Draw connections between stories where relevant. Write in a direct, analytical tone.",
   "categories": [
     {
       "name": "Category Name",
@@ -90,7 +90,7 @@ Respond with ONLY valid JSON, no markdown code fences.`;
         },
         { role: 'user', content: prompt },
       ],
-      max_tokens: 2000,
+      max_tokens: 3500,
       temperature: 0.3,
     });
 

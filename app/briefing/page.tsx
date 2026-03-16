@@ -6,7 +6,6 @@ import ArticleCard from '@/components/ArticleCard';
 import ChatPanel from '@/components/ChatPanel';
 import DashboardLayout from '@/components/DashboardLayout';
 import SourceFilterSidebar from '@/components/SourceFilterSidebar';
-import StatCard from '@/components/ui/StatCard';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 
 export default function BriefingPage() {
@@ -165,7 +164,7 @@ export default function BriefingPage() {
           </div>
         </div>
       ) : (
-        <div className="flex h-[calc(100vh-3.5rem)]">
+        <div className="flex h-[calc(100vh-3.5rem)] max-w-7xl mx-auto">
           {/* Source Filter Sidebar */}
           <div className="w-48 flex-shrink-0 border-r border-border hidden md:block">
             <SourceFilterSidebar
@@ -213,20 +212,6 @@ export default function BriefingPage() {
                     Regenerate
                   </button>
                 </div>
-              </div>
-
-              {/* Stats Row */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                <StatCard value={briefing.totalArticles} label="Articles" />
-                <StatCard value={briefing.totalSources} label="Sources" />
-                <StatCard value={briefing.totalClusters} label="Clusters" />
-                <StatCard
-                  value={new Date(briefing.generatedAt).toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
-                  label="Generated"
-                />
               </div>
 
               {/* Mobile source filter */}
