@@ -1,25 +1,28 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import type { Briefing, DailyIntelligence, Article } from '@/lib/types';
+import type { Briefing, DailyIntelligence, Article, UserPreferences } from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
 import IntelligenceCard from '@/components/IntelligenceCard';
 import ChatPanel from '@/components/ChatPanel';
 import Card from '@/components/ui/Card';
 import { SkeletonPage } from '@/components/ui/Skeleton';
+import { mapIntelligenceCategoryToSlug } from '@/lib/utils/personalization';
 
 export default function Home() {
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [intelligence, setIntelligence] = useState<DailyIntelligence | null>(null);
+  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [briefingRes, intelligenceRes] = await Promise.all([
+        const [briefingRes, intelligenceRes, prefsRes] = await Promise.all([
           fetch('/api/briefing'),
           fetch('/api/intelligence'),
+          fetch('/api/preferences'),
         ]);
 
         const briefingData = await briefingRes.json();
@@ -31,6 +34,11 @@ export default function Home() {
         if (intelligenceRes.ok && intelligenceData.success) {
           setIntelligence(intelligenceData.intelligence);
         }
+
+        const prefsData = await prefsRes.json();
+        if (prefsRes.ok && prefsData.success) {
+          setPreferences(prefsData.preferences);
+        }
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
       } finally {
@@ -40,6 +48,20 @@ export default function Home() {
 
     fetchData();
   }, []);
+
+  // Sort intelligence categories by user preference weight
+  const sortedCategories = useMemo(() => {
+    if (!intelligence?.categories) return [];
+    if (!preferences) return intelligence.categories;
+
+    return [...intelligence.categories].sort((a, b) => {
+      const slugA = mapIntelligenceCategoryToSlug(a.name);
+      const slugB = mapIntelligenceCategoryToSlug(b.name);
+      const weightA = preferences.interests[slugA] ?? 50;
+      const weightB = preferences.interests[slugB] ?? 50;
+      return weightB - weightA;
+    });
+  }, [intelligence, preferences]);
 
   const allArticles: Article[] = briefing
     ? [
@@ -69,9 +91,9 @@ export default function Home() {
           )}
 
           {/* Category Cards */}
-          {intelligence?.categories && intelligence.categories.length > 0 && (
+          {sortedCategories.length > 0 && (
             <div className="grid sm:grid-cols-2 gap-3">
-              {intelligence.categories.map((category) => (
+              {sortedCategories.map((category) => (
                 <IntelligenceCard
                   key={category.name}
                   name={category.name}

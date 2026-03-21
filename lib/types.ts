@@ -6,6 +6,27 @@ export type SourceType = 'rss' | 'atom' | 'html' | 'blog';
 
 export type BriefingStatus = 'processing' | 'ready' | 'error';
 
+export type ArticleCategory =
+  | 'ai-ml'
+  | 'business'
+  | 'science'
+  | 'security'
+  | 'programming'
+  | 'devops'
+  | 'design'
+  | 'other';
+
+export const CATEGORY_META: Record<ArticleCategory, { label: string; icon: string }> = {
+  'ai-ml':       { label: 'AI & ML',            icon: '🤖' },
+  'business':    { label: 'Business & Startups', icon: '🏢' },
+  'science':     { label: 'Science & Research',  icon: '🔬' },
+  'security':    { label: 'Security & Privacy',  icon: '🔒' },
+  'programming': { label: 'Programming',         icon: '💻' },
+  'devops':      { label: 'DevOps & Infra',      icon: '☁️' },
+  'design':      { label: 'Design & UX',         icon: '🎨' },
+  'other':       { label: 'Other',               icon: '📄' },
+};
+
 /**
  * Content Source Configuration
  * Supports both RSS feeds and HTML websites with auto-detection
@@ -36,6 +57,7 @@ export interface Article {
   sourceAuthority: number; // Denormalized for clustering
   fetchedAt: string; // ISO timestamp of when we fetched this
   summary?: string; // AI-generated 1-sentence summary
+  category?: ArticleCategory; // AI-assigned content category
 }
 
 /**
@@ -93,6 +115,28 @@ export interface DailyIntelligence {
   }>;
   generatedAt: string;
 }
+
+/**
+ * User Preferences for personalized content ordering
+ */
+export interface UserPreferences {
+  interests: Record<ArticleCategory, number>; // category → weight (0-100)
+  updatedAt: string; // ISO timestamp
+}
+
+export const DEFAULT_PREFERENCES: UserPreferences = {
+  interests: {
+    'ai-ml': 50,
+    'business': 50,
+    'science': 50,
+    'security': 50,
+    'programming': 50,
+    'devops': 50,
+    'design': 50,
+    'other': 50,
+  },
+  updatedAt: new Date().toISOString(),
+};
 
 /**
  * Chat Message for the chat interface

@@ -1,17 +1,37 @@
 /**
  * Vercel KV Storage Layer
  * Handles all interactions with Vercel KV (Redis)
- * Falls back to in-memory storage for local development
+ * Falls back to SQLite for local development (persists across restarts)
  */
 
 import { kv } from '@vercel/kv';
-import type { Briefing, DailyIntelligence, Source } from './types';
+import { Database } from 'bun:sqlite';
+import { join } from 'path';
+import type { Briefing, DailyIntelligence, Source, UserPreferences } from './types';
+import { DEFAULT_PREFERENCES } from './types';
 
 // Check if KV is configured
 const hasKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
 
-// In-memory storage fallback for local development
-const localStore = new Map<string, any>();
+// SQLite fallback for local development — persists to data/local.db
+let db: Database | null = null;
+
+function getLocalDb(): Database {
+  if (!db) {
+    const dbPath = join(process.cwd(), 'data', 'local.db');
+    // Ensure directory exists
+    const { mkdirSync } = require('fs');
+    mkdirSync(join(process.cwd(), 'data'), { recursive: true });
+
+    db = new Database(dbPath);
+    db.run(`CREATE TABLE IF NOT EXISTS kv (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      expires_at INTEGER
+    )`);
+  }
+  return db;
+}
 
 // Storage abstraction layer
 const store = {
@@ -19,15 +39,28 @@ const store = {
     if (hasKV) {
       return await kv.get<T>(key);
     }
-    return localStore.get(key) ?? null;
+    const localDb = getLocalDb();
+    const row = localDb.query('SELECT value, expires_at FROM kv WHERE key = ?').get(key) as { value: string; expires_at: number | null } | null;
+    if (!row) return null;
+
+    // Check TTL expiration
+    if (row.expires_at && Date.now() > row.expires_at) {
+      localDb.query('DELETE FROM kv WHERE key = ?').run(key);
+      return null;
+    }
+
+    return row.value as T;
   },
 
   async set(key: string, value: any, options?: { ex?: number }): Promise<void> {
     if (hasKV) {
       await kv.set(key, value, options as any);
     } else {
-      localStore.set(key, value);
-      // For local storage, we ignore TTL options
+      const localDb = getLocalDb();
+      const expiresAt = options?.ex ? Date.now() + options.ex * 1000 : null;
+      localDb.query(
+        'INSERT OR REPLACE INTO kv (key, value, expires_at) VALUES (?, ?, ?)'
+      ).run(key, value, expiresAt);
     }
   },
 
@@ -35,12 +68,33 @@ const store = {
     if (hasKV) {
       await kv.del(key);
     } else {
-      localStore.delete(key);
+      const localDb = getLocalDb();
+      localDb.query('DELETE FROM kv WHERE key = ?').run(key);
     }
   },
 };
 
-console.log(`[KV] Using ${hasKV ? 'Vercel KV' : 'local in-memory'} storage`);
+console.log(`[KV] Using ${hasKV ? 'Vercel KV' : 'local SQLite'} storage`);
+
+/**
+ * Auto-seed from a config JSON file when the DB is empty.
+ * Looks for config/{filename} in the project root.
+ */
+async function seedFromConfigFile<T>(filename: string, key: string): Promise<T | null> {
+  try {
+    const configPath = join(process.cwd(), 'config', filename);
+    const file = Bun.file(configPath);
+    if (await file.exists()) {
+      const data = await file.json();
+      await store.set(key, JSON.stringify(data));
+      console.log(`[KV] Auto-seeded from config/${filename}`);
+      return data as T;
+    }
+  } catch (error) {
+    // Config file doesn't exist or is invalid — that's fine
+  }
+  return null;
+}
 
 // KV Key Constants
 const KEYS = {
@@ -48,6 +102,7 @@ const KEYS = {
   INTELLIGENCE_TODAY: 'intelligence:today',
   SOURCES_CONFIG: 'sources:config',
   READ_ARTICLES: 'read:articles',
+  PREFERENCES: 'user:preferences',
   briefingByDate: (date: string) => `briefing:${date}`,
 };
 
@@ -127,15 +182,19 @@ export async function storeSources(sources: Source[]): Promise<void> {
 }
 
 /**
- * Retrieve all configured sources
+ * Retrieve all configured sources.
+ * On first boot, auto-seeds from config/sources.json if the DB is empty.
  */
 export async function getSources(): Promise<Source[]> {
   try {
     const data = await store.get<string>(KEYS.SOURCES_CONFIG);
-    if (!data) return [];
+    if (data) {
+      const sources = typeof data === 'string' ? JSON.parse(data) : data;
+      return sources as Source[];
+    }
 
-    const sources = typeof data === 'string' ? JSON.parse(data) : data;
-    return sources as Source[];
+    // Auto-seed from config file if DB is empty
+    return await seedFromConfigFile<Source[]>('sources.json', KEYS.SOURCES_CONFIG) ?? [];
   } catch (error) {
     console.error('[KV] Error getting sources:', error);
     return [];
@@ -271,6 +330,42 @@ export async function markAllArticlesRead(articleIds: string[]): Promise<void> {
   } catch (error) {
     console.error('[KV] Error marking all articles as read:', error);
     throw new Error('Failed to mark articles as read');
+  }
+}
+
+/**
+ * Get user preferences (returns defaults if none stored).
+ * On first boot, auto-seeds from config/preferences.json if available.
+ */
+export async function getPreferences(): Promise<UserPreferences> {
+  try {
+    const data = await store.get<string>(KEYS.PREFERENCES);
+    if (data) {
+      const prefs = typeof data === 'string' ? JSON.parse(data) : data;
+      return prefs as UserPreferences;
+    }
+
+    // Try auto-seeding from config file
+    const seeded = await seedFromConfigFile<UserPreferences>('preferences.json', KEYS.PREFERENCES);
+    if (seeded) return seeded;
+
+    return { ...DEFAULT_PREFERENCES, updatedAt: new Date().toISOString() };
+  } catch (error) {
+    console.error('[KV] Error getting preferences:', error);
+    return { ...DEFAULT_PREFERENCES, updatedAt: new Date().toISOString() };
+  }
+}
+
+/**
+ * Store user preferences (no TTL — persistent)
+ */
+export async function storePreferences(prefs: UserPreferences): Promise<void> {
+  try {
+    await store.set(KEYS.PREFERENCES, JSON.stringify(prefs));
+    console.log('[KV] Stored user preferences');
+  } catch (error) {
+    console.error('[KV] Error storing preferences:', error);
+    throw new Error('Failed to store preferences');
   }
 }
 

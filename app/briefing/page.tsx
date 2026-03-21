@@ -1,24 +1,42 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import type { Briefing, Article } from '@/lib/types';
+import type { Briefing, Article, UserPreferences, ArticleCategory } from '@/lib/types';
+import { CATEGORY_META } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
 import ChatPanel from '@/components/ChatPanel';
 import DashboardLayout from '@/components/DashboardLayout';
 import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import { SkeletonPage } from '@/components/ui/Skeleton';
+import { sortByPreference } from '@/lib/utils/personalization';
 
 export default function BriefingPage() {
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
+  const [selectedCategories, setSelectedCategories] = useState<Set<ArticleCategory>>(new Set());
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
+  const [sortMode, setSortMode] = useState<'time' | 'personalized'>('time');
 
   useEffect(() => {
     fetchBriefing();
     fetchReadIds();
+    fetchPreferences();
   }, []);
+
+  async function fetchPreferences() {
+    try {
+      const response = await fetch('/api/preferences');
+      const data = await response.json();
+      if (data.success) {
+        setPreferences(data.preferences);
+      }
+    } catch (err) {
+      console.error('Failed to fetch preferences:', err);
+    }
+  }
 
   async function fetchBriefing() {
     try {
@@ -81,11 +99,35 @@ export default function BriefingPage() {
     );
   }, [briefing]);
 
-  // Filtered articles based on selected sources
+  // Filtered articles based on selected sources and categories
   const filteredArticles = useMemo(() => {
-    if (selectedSources.size === 0) return allArticles;
-    return allArticles.filter((a) => selectedSources.has(a.sourceName));
-  }, [allArticles, selectedSources]);
+    let articles = allArticles;
+
+    if (selectedSources.size > 0) {
+      articles = articles.filter((a) => selectedSources.has(a.sourceName));
+    }
+
+    if (selectedCategories.size > 0) {
+      articles = articles.filter((a) => selectedCategories.has(a.category || 'other'));
+    }
+
+    // Apply sort mode
+    if (sortMode === 'personalized' && preferences) {
+      return sortByPreference(articles, preferences);
+    }
+
+    return articles;
+  }, [allArticles, selectedSources, selectedCategories, sortMode, preferences]);
+
+  // Get unique categories with counts for filter pills
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<ArticleCategory, number>();
+    for (const article of allArticles) {
+      const cat = article.category || 'other';
+      counts.set(cat, (counts.get(cat) || 0) + 1);
+    }
+    return counts;
+  }, [allArticles]);
 
   const handleToggleSource = useCallback((sourceName: string) => {
     setSelectedSources((prev) => {
@@ -101,6 +143,19 @@ export default function BriefingPage() {
 
   const handleClearFilters = useCallback(() => {
     setSelectedSources(new Set());
+    setSelectedCategories(new Set());
+  }, []);
+
+  const handleToggleCategory = useCallback((category: ArticleCategory) => {
+    setSelectedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
   }, []);
 
   const handleMarkRead = useCallback(async (articleId: string) => {
@@ -212,6 +267,47 @@ export default function BriefingPage() {
                     Regenerate
                   </button>
                 </div>
+              </div>
+
+              {/* Sort toggle + Category filter pills */}
+              <div className="mb-4 flex flex-wrap items-center gap-1.5">
+                <div className="flex items-center gap-1 mr-3 border-r border-border pr-3">
+                  <button
+                    onClick={() => setSortMode('time')}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      sortMode === 'time'
+                        ? 'bg-accent-muted text-text-primary'
+                        : 'bg-bg-elevated text-text-secondary'
+                    }`}
+                  >
+                    Newest First
+                  </button>
+                  <button
+                    onClick={() => setSortMode('personalized')}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      sortMode === 'personalized'
+                        ? 'bg-accent-muted text-text-primary'
+                        : 'bg-bg-elevated text-text-secondary'
+                    }`}
+                  >
+                    For You
+                  </button>
+                </div>
+                {Array.from(categoryCounts.entries())
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([category, count]) => (
+                    <button
+                      key={category}
+                      onClick={() => handleToggleCategory(category)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                        selectedCategories.has(category)
+                          ? 'bg-accent-muted text-text-primary'
+                          : 'bg-bg-elevated text-text-secondary'
+                      }`}
+                    >
+                      {CATEGORY_META[category]?.icon} {CATEGORY_META[category]?.label} ({count})
+                    </button>
+                  ))}
               </div>
 
               {/* Mobile source filter */}

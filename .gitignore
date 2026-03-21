@@ -47,3 +47,6 @@ next-env.d.ts
 
 # Bun
 bun.lockb
+
+# Local dev database
+data/

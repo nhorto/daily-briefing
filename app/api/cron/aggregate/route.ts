@@ -15,6 +15,7 @@ import {
   sortArticlesByTime,
 } from '@/lib/services/clustering';
 import { summarizeClusters, generateArticleSummaries } from '@/lib/services/summarizer';
+import { categorizeArticles } from '@/lib/services/categorizer';
 import { generateDailyIntelligence } from '@/lib/services/intelligence';
 import { getTodayDateString, getBriefingTimeWindow } from '@/lib/utils/date';
 
@@ -90,7 +91,31 @@ export async function POST(request: NextRequest) {
       article.summary = articleSummaries.get(article.id);
     });
 
-    // 7. Sort clusters and articles
+    // 7. Categorize ALL articles (GPT-4o-mini — cheap)
+    try {
+      console.log('[Cron] Categorizing articles...');
+      const allArticlesForCategorization = [
+        ...rawClusters.flatMap((c) => c.articles),
+        ...individualArticles,
+      ];
+      const categories = await categorizeArticles(allArticlesForCategorization);
+
+      // Apply categories to all articles in-place
+      for (const cluster of rawClusters) {
+        for (const article of cluster.articles) {
+          article.category = categories.get(article.id);
+        }
+      }
+      for (const article of individualArticles) {
+        article.category = categories.get(article.id);
+      }
+      console.log(`[Cron] Categorized ${categories.size} articles`);
+    } catch (error) {
+      console.error('[Cron] Failed to categorize articles:', error);
+      // Non-fatal: articles will just lack categories
+    }
+
+    // 8. Sort clusters and articles
     const clusters = sortClustersBySize(rawClusters);
     const sortedIndividualArticles = sortArticlesByTime(individualArticles);
 
