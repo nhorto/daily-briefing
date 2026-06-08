@@ -100,6 +100,23 @@ describe('blendScores', () => {
     const signals = [sig(), sig(), sig()];
     expect(blendScores(signals)).toHaveLength(3);
   });
+
+  it('ignores fit entirely when no signal carries it (cold start)', () => {
+    const signals = [sig({ affinity: 90 }), sig({ affinity: 10 })];
+    // Equivalent to the two-term blend: higher affinity wins.
+    const scores = blendScores(signals);
+    expect(scores[0]).toBeGreaterThan(scores[1]!);
+  });
+
+  it('uses semantic fit when present', () => {
+    // Equal importance + affinity; only fit differs → higher fit ranks higher.
+    const signals = [
+      sig({ clusterSize: 2, sourceQuality: 50, affinity: 50, fit: 0.1 }),
+      sig({ clusterSize: 2, sourceQuality: 50, affinity: 50, fit: 0.9 }),
+    ];
+    const scores = blendScores(signals);
+    expect(scores[1]).toBeGreaterThan(scores[0]!);
+  });
 });
 
 describe('mmrRerank', () => {
