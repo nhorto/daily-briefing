@@ -51,6 +51,8 @@ export default function ArticleCard({
 
   return (
     <Card hover className={`${compact ? 'p-4' : 'p-5'} ${isRead ? 'opacity-60' : ''}`}>
+      <div className="flex gap-4">
+        <div className="flex-1 min-w-0">
       {/* Metadata */}
       <div className="flex items-center gap-2 mb-2 text-sm">
         <span className="inline-flex items-center gap-1.5">
@@ -140,6 +142,23 @@ export default function ArticleCard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </FeedbackButton>
+          </div>
+        )}
+      </div>
+        </div>
+
+        {/* Thumbnail */}
+        {article.imageUrl && (
+          <div className="flex-shrink-0 hidden sm:block">
+            <img
+              src={article.imageUrl}
+              alt=""
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+              className={`${compact ? 'w-16 h-16' : 'w-24 h-24'} object-cover rounded-md bg-bg-elevated`}
+            />
           </div>
         )}
       </div>

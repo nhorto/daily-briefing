@@ -58,6 +58,7 @@ export interface Article {
   fetchedAt: string; // ISO timestamp of when we fetched this
   summary?: string; // AI-generated 1-sentence summary
   category?: ArticleCategory; // AI-assigned content category
+  imageUrl?: string; // Thumbnail (feed media or og:image), if available
 }
 
 /**

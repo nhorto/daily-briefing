@@ -41,6 +41,17 @@ export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardPro
             <span>articles</span>
           </div>
         </div>
+        {cluster.representativeArticle.imageUrl && (
+          <img
+            src={cluster.representativeArticle.imageUrl}
+            alt=""
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+            className="w-20 h-20 object-cover rounded-md flex-shrink-0 hidden sm:block bg-bg-elevated"
+          />
+        )}
       </div>
 
       {/* Sources */}

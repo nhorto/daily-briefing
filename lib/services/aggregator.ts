@@ -14,6 +14,12 @@ const rssParser = new Parser({
   headers: {
     'User-Agent': 'DailyBriefing/1.0',
   },
+  customFields: {
+    item: [
+      ['media:content', 'mediaContent', { keepArray: true }],
+      ['media:thumbnail', 'mediaThumbnail'],
+    ],
+  },
 });
 
 /**
@@ -57,7 +63,9 @@ async function fetchRSSFeed(source: Source, sinceTimestamp?: string): Promise<Ar
 
   const sinceDate = sinceTimestamp ? new Date(sinceTimestamp) : null;
 
-  for (const item of feed.items) {
+  // rss-parser's Item typing is awkward once customFields are added; treat items
+  // loosely so we can read standard and custom fields uniformly.
+  for (const item of feed.items as any[]) {
     // Skip if no URL or title
     if (!item.link || !item.title) continue;
 
@@ -82,6 +90,7 @@ async function fetchRSSFeed(source: Source, sinceTimestamp?: string): Promise<Ar
       sourceName: source.name,
       sourceAuthority: source.authority,
       fetchedAt: new Date().toISOString(),
+      imageUrl: extractImageFromRssItem(item, source.url),
     });
   }
 
@@ -125,6 +134,7 @@ async function fetchHTMLPage(source: Source, sinceTimestamp?: string): Promise<A
       sourceName: source.name,
       sourceAuthority: source.authority,
       fetchedAt: new Date().toISOString(),
+      imageUrl: extractOgImage(dom.window.document, source.url),
     },
   ];
 
@@ -307,11 +317,81 @@ async function fetchSingleArticle(url: string, source: Source): Promise<Article 
       sourceName: source.name,
       sourceAuthority: source.authority,
       fetchedAt: new Date().toISOString(),
+      imageUrl: extractOgImage(dom.window.document, url),
     };
   } catch (error) {
     console.warn(`[Aggregator] Error fetching article ${url}:`, (error as Error).message);
     return null;
   }
+}
+
+/** Does this URL look like a direct image link? */
+function looksLikeImage(url: string): boolean {
+  return /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(url);
+}
+
+/** Resolve a possibly-relative image URL against the page/feed URL. */
+function absolutizeUrl(url: string, baseUrl: string): string {
+  try {
+    return new URL(url, baseUrl).toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Pull a thumbnail URL out of an RSS item: enclosure, media:thumbnail,
+ * media:content, or the first <img> in the content HTML.
+ */
+export function extractImageFromRssItem(item: any, baseUrl: string): string | undefined {
+  // RSS <enclosure>
+  const enclosure = item.enclosure;
+  if (enclosure?.url && (enclosure.type?.startsWith('image') || looksLikeImage(enclosure.url))) {
+    return absolutizeUrl(enclosure.url, baseUrl);
+  }
+
+  // <media:thumbnail>
+  const thumb = item.mediaThumbnail?.$?.url || item.mediaThumbnail?.url;
+  if (thumb) return absolutizeUrl(thumb, baseUrl);
+
+  // <media:content> (may be a single object or an array)
+  const media = item.mediaContent;
+  const mediaItems = Array.isArray(media) ? media : media ? [media] : [];
+  for (const m of mediaItems) {
+    const url = m?.$?.url;
+    if (!url) continue;
+    const medium = m?.$?.medium;
+    const type = m?.$?.type;
+    if (medium === 'image' || type?.startsWith('image') || looksLikeImage(url)) {
+      return absolutizeUrl(url, baseUrl);
+    }
+  }
+
+  // First <img> in the content HTML
+  const html: string = item['content:encoded'] || item.content || '';
+  const match = /<img[^>]+src=["']([^"']+)["']/i.exec(html);
+  if (match?.[1]) return absolutizeUrl(match[1], baseUrl);
+
+  return undefined;
+}
+
+/**
+ * Extract an og:image / twitter:image from an HTML document (absolute URL).
+ */
+export function extractOgImage(document: Document, baseUrl: string): string | undefined {
+  const selectors = [
+    'meta[property="og:image"]',
+    'meta[property="og:image:url"]',
+    'meta[name="og:image"]',
+    'meta[name="twitter:image"]',
+    'meta[name="twitter:image:src"]',
+    'meta[property="twitter:image"]',
+  ];
+  for (const selector of selectors) {
+    const content = document.querySelector(selector)?.getAttribute('content');
+    if (content) return absolutizeUrl(content, baseUrl);
+  }
+  return undefined;
 }
 
 /**
