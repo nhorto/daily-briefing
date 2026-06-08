@@ -473,6 +473,39 @@ export async function enrichArticleImages(
 }
 
 /**
+ * Fetch an article page and extract its full readable text via Readability,
+ * cleaned and capped. Used by the chat so it can answer detailed questions about
+ * an article (and summarize it) instead of relying on just the title + short
+ * excerpt. Returns null if the page can't be fetched or no text is extractable.
+ */
+export async function fetchArticleFullText(
+  url: string,
+  maxChars = 12000
+): Promise<string | null> {
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'DailyBriefing/1.0' },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) return null;
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('html')) return null;
+
+    const html = await response.text();
+    const dom = new JSDOM(html, { url });
+    const article = new Readability(dom.window.document).parse();
+
+    const text = article?.textContent ? cleanText(article.textContent) : '';
+    if (!text) return null;
+
+    return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Try to extract the published date from HTML meta tags
  */
 function extractPublishedDate(document: Document): string | null {

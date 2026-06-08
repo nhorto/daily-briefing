@@ -14,7 +14,7 @@ export const runtime = 'edge';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages, articles, clusterId } = body;
+    const { messages, articles, clusterId, articleContent } = body;
 
     if (!messages || messages.length === 0) {
       return new Response('No messages provided', { status: 400 });
@@ -27,21 +27,30 @@ export async function POST(req: NextRequest) {
     // Build context from articles
     const context = buildArticleContext(articles as Article[], clusterId);
 
+    // When the user is viewing a single article, we include its full extracted
+    // text so the assistant can answer detailed questions and summarize it —
+    // not just work from the one-sentence summary + short excerpt.
+    const fullText =
+      typeof articleContent === 'string' && articleContent.trim()
+        ? `\n\nFULL TEXT OF THE ARTICLE THE USER IS CURRENTLY VIEWING (this is the authoritative source for that article — use it to answer detailed questions and to summarize on request):\n"""\n${articleContent}\n"""`
+        : '';
+
     // System prompt for the chat
     const systemPrompt = `You are a briefing assistant helping the user understand today's content aggregation.
 
 You have access to ${articles.length} articles from today's briefing. Your role is to:
-1. Answer questions about the content using ONLY the information provided
+1. Answer questions about the content using the information provided
 2. Cite sources when making claims (use [Source Name](URL) format)
 3. Be concise and informative
-4. If asked about something not in the articles, politely say you don't have that information
-5. Support both high-level questions (e.g., "What's happening in AI?") and specific article questions
+4. When the full text of an article is provided, use it to answer detailed questions and to give thorough summaries; otherwise rely on the titles, summaries, and excerpts
+5. If asked about something genuinely not covered by the provided context, politely say you don't have that information
+6. Support both high-level questions (e.g., "What's happening in AI?") and specific article questions
 
-${context}
+${context}${fullText}
 
 Remember:
 - Always cite sources when referencing specific information
-- Don't make up information not present in the articles
+- Don't make up information not present in the provided context
 - Be helpful and conversational
 - If multiple sources cover the same topic, synthesize their perspectives`;
 

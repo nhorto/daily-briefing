@@ -132,6 +132,7 @@ const KEYS = {
   BRIEFING_DATES: 'briefing:dates',
   SEEN_URLS: 'seen:urls',
   briefingByDate: (date: string) => `briefing:${date}`,
+  articleContent: (url: string) => `content:${url}`,
 };
 
 /** Max number of seen article URLs to retain (most-recent-first). */
@@ -452,6 +453,28 @@ export async function setArticleFeedback(
   }
   await store.set(KEYS.ARTICLE_FEEDBACK, JSON.stringify(map), { ex: TTL.MONTH });
   return map;
+}
+
+/**
+ * Get the full extracted text of an article (keyed by URL so it survives
+ * briefing regenerations). Used by the chat to read the whole article on demand.
+ */
+export async function getCachedArticleContent(url: string): Promise<string | null> {
+  try {
+    return await store.get<string>(KEYS.articleContent(url));
+  } catch (error) {
+    console.error('[KV] Error getting cached article content:', error);
+    return null;
+  }
+}
+
+/** Cache an article's extracted full text (7-day TTL). */
+export async function setCachedArticleContent(url: string, content: string): Promise<void> {
+  try {
+    await store.set(KEYS.articleContent(url), content, { ex: TTL.WEEK });
+  } catch (error) {
+    console.error('[KV] Error caching article content:', error);
+  }
 }
 
 /**

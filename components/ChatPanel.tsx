@@ -10,6 +10,9 @@ interface ChatPanelProps {
   articles: Article[];
   articleId?: string;
   className?: string;
+  // Full extracted text of the focused article (article mode), so the chat can
+  // answer detailed questions about it rather than just its summary/excerpt.
+  articleContent?: string | null;
   // Modal mode props (when not embedded)
   isOpen?: boolean;
   onClose?: () => void;
@@ -20,6 +23,7 @@ export default function ChatPanel({
   mode,
   articles,
   className = '',
+  articleContent,
   isOpen,
   onClose,
   clusterId,
@@ -35,9 +39,9 @@ export default function ChatPanel({
     () =>
       new TextStreamChatTransport({
         api: '/api/chat',
-        body: { articles, clusterId },
+        body: { articles, clusterId, articleContent },
       }),
-    [articles, clusterId]
+    [articles, clusterId, articleContent]
   );
 
   const { messages, sendMessage, status } = useChat({ transport });
@@ -76,9 +80,14 @@ export default function ChatPanel({
       ? 'Ask about today\'s content'
       : 'Chat';
 
-  const contextText = clusterId
-    ? 'Focused on selected topic'
-    : `${articles.length} articles in context`;
+  const contextText =
+    mode === 'article'
+      ? articleContent
+        ? 'Reading the full article'
+        : 'Using summary + excerpt'
+      : clusterId
+        ? 'Focused on selected topic'
+        : `${articles.length} articles in context`;
 
   const chatContent = (
     <div className={`flex flex-col h-full ${isEmbedded ? '' : 'max-h-[80vh]'}`}>

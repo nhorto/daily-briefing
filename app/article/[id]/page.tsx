@@ -21,6 +21,7 @@ export default function ArticleDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedbackSignal, setFeedbackSignal] = useState<FeedbackSignal | undefined>(undefined);
+  const [articleContent, setArticleContent] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchArticle() {
@@ -60,6 +61,25 @@ export default function ArticleDetailPage() {
     }
 
     fetchArticle();
+  }, [id]);
+
+  // Fetch the full article text (best-effort) so the chat can read the whole
+  // piece and answer detailed questions. Non-blocking — the page renders without it.
+  useEffect(() => {
+    let cancelled = false;
+    setArticleContent(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/articles/${id}/content`);
+        const data = await res.json();
+        if (!cancelled && data.success) setArticleContent(data.content ?? null);
+      } catch {
+        // non-critical: chat falls back to summary + excerpt
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   async function handleFeedback(signal: FeedbackSignal) {
@@ -240,6 +260,7 @@ export default function ArticleDetailPage() {
             mode="article"
             articles={[article, ...relatedArticles]}
             articleId={article.id}
+            articleContent={articleContent}
             className="h-full rounded-none border-0"
           />
         </div>
