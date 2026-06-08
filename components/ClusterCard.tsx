@@ -13,6 +13,7 @@ interface ClusterCardProps {
 
 export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const sourceCount = new Set(cluster.articles.map((a) => a.sourceName)).size;
 
   const handleAskAboutTopic = () => {
     if (onAskAboutTopic) {
@@ -29,11 +30,15 @@ export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardPro
             {cluster.title}
           </h3>
           <div className="flex items-center gap-2 text-sm text-text-muted">
+            <span className="inline-flex items-center gap-1 text-accent font-medium">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M9 7a3 3 0 116 0v3a3 3 0 11-6 0V7z" />
+              </svg>
+              Covered by {sourceCount} {sourceCount === 1 ? 'source' : 'sources'}
+            </span>
+            <span>·</span>
             <span className="font-mono">{cluster.articles.length}</span>
             <span>articles</span>
-            <span>·</span>
-            <span className="font-mono">{Math.round(cluster.avgSimilarity * 100)}%</span>
-            <span>similarity</span>
           </div>
         </div>
       </div>
@@ -63,12 +68,14 @@ export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardPro
         >
           {isExpanded ? 'Hide' : 'View All'} {cluster.articles.length} Articles
         </button>
-        <button
-          onClick={handleAskAboutTopic}
-          className="px-4 py-2 bg-bg-elevated text-text-secondary rounded-md hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
-        >
-          Ask About This Topic
-        </button>
+        {onAskAboutTopic && (
+          <button
+            onClick={handleAskAboutTopic}
+            className="px-4 py-2 bg-bg-elevated text-text-secondary rounded-md hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
+          >
+            Ask About This Topic
+          </button>
+        )}
       </div>
 
       {/* Expanded Articles List */}

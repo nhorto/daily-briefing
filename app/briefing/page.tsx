@@ -1,14 +1,18 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import type { Briefing, Article, UserPreferences, ArticleCategory, FeedbackSignal } from '@/lib/types';
+import type { Briefing, Article, Cluster, UserPreferences, ArticleCategory, FeedbackSignal } from '@/lib/types';
 import { CATEGORY_META } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
+import ClusterCard from '@/components/ClusterCard';
 import ChatPanel from '@/components/ChatPanel';
 import DashboardLayout from '@/components/DashboardLayout';
 import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import { SkeletonPage } from '@/components/ui/Skeleton';
-import { sortByPreference } from '@/lib/utils/personalization';
+import { sortByPreference, getPersonalizationScore } from '@/lib/utils/personalization';
+
+/** A row in the feed: either a multi-source topic cluster or a single article. */
+type FeedItem = { kind: 'cluster'; cluster: Cluster } | { kind: 'article'; article: Article };
 
 export default function BriefingPage() {
   const [briefing, setBriefing] = useState<Briefing | null>(null);
@@ -132,6 +136,45 @@ export default function BriefingPage() {
 
     return articles;
   }, [allArticles, selectedSources, selectedCategories, sortMode, preferences]);
+
+  // Unified feed: clusters and individual articles as a single ranked list.
+  const feedItems: FeedItem[] = useMemo(() => {
+    if (!briefing) return [];
+
+    const matches = (a: Article) =>
+      (selectedSources.size === 0 || selectedSources.has(a.sourceName)) &&
+      (selectedCategories.size === 0 || selectedCategories.has(a.category || 'other'));
+
+    const items: FeedItem[] = [];
+    // A cluster appears if any of its articles passes the active filters.
+    for (const cluster of briefing.clusters) {
+      if (cluster.articles.some(matches)) items.push({ kind: 'cluster', cluster });
+    }
+    for (const article of briefing.individualArticles) {
+      if (matches(article)) items.push({ kind: 'article', article });
+    }
+
+    const itemTime = (it: FeedItem) =>
+      it.kind === 'article'
+        ? new Date(it.article.publishedAt).getTime()
+        : Math.max(...it.cluster.articles.map((a) => new Date(a.publishedAt).getTime()));
+
+    const itemScore = (it: FeedItem) => {
+      if (!preferences) return 0;
+      return it.kind === 'article'
+        ? getPersonalizationScore(it.article, preferences)
+        : Math.max(...it.cluster.articles.map((a) => getPersonalizationScore(a, preferences)));
+    };
+
+    if (sortMode === 'personalized' && preferences) {
+      // Tier by score (10-pt buckets) so similar items stay newest-first.
+      return [...items].sort((a, b) => {
+        const tierDiff = Math.floor(itemScore(b) / 10) - Math.floor(itemScore(a) / 10);
+        return tierDiff !== 0 ? tierDiff : itemTime(b) - itemTime(a);
+      });
+    }
+    return [...items].sort((a, b) => itemTime(b) - itemTime(a));
+  }, [briefing, selectedSources, selectedCategories, sortMode, preferences]);
 
   // Get unique categories with counts for filter pills
   const categoryCounts = useMemo(() => {
@@ -387,27 +430,31 @@ export default function BriefingPage() {
               </div>
 
               {/* Article Feed */}
-              {filteredArticles.length > 0 ? (
+              {feedItems.length > 0 ? (
                 <div className="space-y-3">
-                  {filteredArticles.map((article) => (
-                    <ArticleCard
-                      key={article.id}
-                      article={article}
-                      isRead={readIds.has(article.id)}
-                      onMarkRead={handleMarkRead}
-                      feedback={feedback[article.id]}
-                      onFeedback={handleFeedback}
-                    />
-                  ))}
+                  {feedItems.map((item) =>
+                    item.kind === 'cluster' ? (
+                      <ClusterCard key={item.cluster.id} cluster={item.cluster} />
+                    ) : (
+                      <ArticleCard
+                        key={item.article.id}
+                        article={item.article}
+                        isRead={readIds.has(item.article.id)}
+                        onMarkRead={handleMarkRead}
+                        feedback={feedback[item.article.id]}
+                        onFeedback={handleFeedback}
+                      />
+                    )
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-12">
                   <p className="text-text-secondary">
-                    {selectedSources.size > 0
-                      ? 'No articles match the selected sources.'
+                    {selectedSources.size > 0 || selectedCategories.size > 0
+                      ? 'No articles match the selected filters.'
                       : 'No content found for today. Check back later!'}
                   </p>
-                  {selectedSources.size > 0 && (
+                  {(selectedSources.size > 0 || selectedCategories.size > 0) && (
                     <button
                       onClick={handleClearFilters}
                       className="mt-3 text-accent hover:text-accent-hover transition-colors text-sm font-medium"
