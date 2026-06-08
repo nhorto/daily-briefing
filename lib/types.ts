@@ -167,6 +167,23 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
 /** Weight applied to category vs source signal when scoring an article. */
 export const SCORE_WEIGHTS = { category: 0.6, source: 0.4 } as const;
 
+/**
+ * The user's semantic interest profile, accumulated from feedback. Running sums
+ * (not a precomputed mean) so it updates incrementally and survives briefing
+ * regenerations. The profile vector is normalize(mean(pos) − λ·mean(neg)).
+ */
+export interface ProfileState {
+  posSum: number[]; // sum of liked/saved embeddings
+  posCount: number;
+  negSum: number[]; // sum of disliked/hidden embeddings
+  negCount: number;
+  dim: number; // embedding dimension (resets profile if it changes)
+  updatedAt: string;
+}
+
+/** How strongly disliked content pushes the profile away (the λ in pos − λ·neg). */
+export const PROFILE_DISLIKE_WEIGHT = 0.4;
+
 /** How far each feedback signal nudges the relevant weights (clamped 0-100). */
 export const FEEDBACK_DELTAS: Record<FeedbackSignal, number> = {
   up: 8,

@@ -15,6 +15,7 @@ import {
   getPreferences,
   getSeenUrls,
   markUrlsSeen,
+  setCachedEmbeddings,
   storeBriefing,
   storeIntelligence,
   updateSourceLastFetched,
@@ -24,6 +25,7 @@ import { isMuted } from '../utils/personalization';
 import { clusterArticles, sortClustersBySize, sortArticlesByTime } from './clustering';
 import { summarizeClusters, generateArticleSummaries } from './summarizer';
 import { categorizeArticles } from './categorizer';
+import { articleEmbeddingText, embedTexts } from './embeddings';
 import { generateDailyIntelligence } from './intelligence';
 import { getTodayDateString, getBriefingTimeWindow } from '../utils/date';
 
@@ -140,6 +142,23 @@ export async function runAggregation(): Promise<AggregationResult> {
     for (const article of individualArticles) article.category = categories.get(article.id);
   } catch (error) {
     console.error('[Aggregation] Categorization failed (continuing):', error);
+  }
+
+  // Embeddings (non-fatal): embed each article's title+summary so the feed can
+  // rank by semantic "fit" to the user's profile. Cached by id (30-day TTL),
+  // batched into one or two API calls. ~$0.03/mo at this volume.
+  try {
+    const all = [...rawClusters.flatMap((c) => c.articles), ...individualArticles];
+    const vectors = await embedTexts(all.map((a) => articleEmbeddingText(a)));
+    const entries: Array<[string, number[]]> = [];
+    all.forEach((a, i) => {
+      const v = vectors[i];
+      if (v) entries.push([a.id, v]);
+    });
+    await setCachedEmbeddings(entries);
+    console.log(`[Aggregation] Embedded ${entries.length}/${all.length} articles`);
+  } catch (error) {
+    console.error('[Aggregation] Embedding failed (continuing):', error);
   }
 
   const clusters = sortClustersBySize(rawClusters);
