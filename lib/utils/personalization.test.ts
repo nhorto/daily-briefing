@@ -4,6 +4,7 @@ import {
   sortByPreference,
   applyFeedback,
   mapIntelligenceCategoryToSlug,
+  isMuted,
 } from './personalization';
 import { DEFAULT_PREFERENCES } from '../types';
 import type { Article, UserPreferences } from '../types';
@@ -32,9 +33,11 @@ const prefs: UserPreferences = {
     'programming': 50,
     'devops': 50,
     'design': 50,
+    'hardware': 50,
     'other': 20,
   },
   sources: {},
+  mutedKeywords: [],
   updatedAt: '2026-06-08T00:00:00.000Z',
 };
 
@@ -119,11 +122,45 @@ describe('applyFeedback', () => {
   });
 });
 
+describe('isMuted', () => {
+  test('returns false when there are no muted keywords', () => {
+    expect(isMuted(makeArticle({ title: 'Anything' }), [])).toBe(false);
+    expect(isMuted(makeArticle({ title: 'Anything' }), undefined)).toBe(false);
+  });
+
+  test('matches a single word on word boundaries (case-insensitive)', () => {
+    const art = makeArticle({ title: 'The latest on Brexit talks', excerpt: 'EU news' });
+    expect(isMuted(art, ['brexit'])).toBe(true);
+    expect(isMuted(art, ['BREXIT'])).toBe(true);
+  });
+
+  test('does not match a keyword inside a larger word', () => {
+    // "ai" should not match "rain" / "raining"
+    const art = makeArticle({ title: 'Heavy rain expected', excerpt: 'It is raining' });
+    expect(isMuted(art, ['ai'])).toBe(false);
+  });
+
+  test('matches against the excerpt too', () => {
+    const art = makeArticle({ title: 'Markets update', excerpt: 'Bitcoin surged today' });
+    expect(isMuted(art, ['bitcoin'])).toBe(true);
+  });
+
+  test('matches a multi-word phrase as a substring', () => {
+    const art = makeArticle({ title: 'A look at the stock market rally' });
+    expect(isMuted(art, ['stock market'])).toBe(true);
+  });
+
+  test('ignores blank keywords', () => {
+    expect(isMuted(makeArticle({ title: 'Anything' }), ['   ', ''])).toBe(false);
+  });
+});
+
 describe('mapIntelligenceCategoryToSlug', () => {
   test('maps known keywords to slugs', () => {
     expect(mapIntelligenceCategoryToSlug('AI and Machine Learning')).toBe('ai-ml');
     expect(mapIntelligenceCategoryToSlug('Security & Privacy')).toBe('security');
     expect(mapIntelligenceCategoryToSlug('Startup funding news')).toBe('business');
+    expect(mapIntelligenceCategoryToSlug('New Device Reviews')).toBe('hardware');
   });
 
   test('falls back to "other" for unknown names', () => {

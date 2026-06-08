@@ -9,7 +9,7 @@ import ChatPanel from '@/components/ChatPanel';
 import DashboardLayout from '@/components/DashboardLayout';
 import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import { SkeletonPage } from '@/components/ui/Skeleton';
-import { sortByPreference, getPersonalizationScore } from '@/lib/utils/personalization';
+import { sortByPreference, getPersonalizationScore, isMuted } from '@/lib/utils/personalization';
 import { getTodayDateString } from '@/lib/utils/date';
 import { regenerateBriefingAction } from './actions';
 
@@ -25,6 +25,7 @@ export default function BriefingPage() {
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [feedback, setFeedback] = useState<Record<string, FeedbackSignal>>({});
+  const [bookmarkedUrls, setBookmarkedUrls] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<'time' | 'personalized'>('time');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -40,9 +41,22 @@ export default function BriefingPage() {
     fetchReadIds();
     fetchPreferences();
     fetchFeedback();
+    fetchBookmarks();
     fetchDates();
     // Run once on mount; the fetch helpers are stable for this purpose.
   }, []);
+
+  async function fetchBookmarks() {
+    try {
+      const response = await fetch('/api/bookmarks');
+      const data = await response.json();
+      if (data.success) {
+        setBookmarkedUrls(new Set((data.bookmarks as { url: string }[]).map((b) => b.url)));
+      }
+    } catch (err) {
+      console.error('Failed to fetch bookmarks:', err);
+    }
+  }
 
   async function fetchDates() {
     try {
@@ -151,6 +165,11 @@ export default function BriefingPage() {
   const filteredArticles = useMemo(() => {
     let articles = allArticles;
 
+    const muted = preferences?.mutedKeywords;
+    if (muted && muted.length > 0) {
+      articles = articles.filter((a) => !isMuted(a, muted));
+    }
+
     if (selectedSources.size > 0) {
       articles = articles.filter((a) => selectedSources.has(a.sourceName));
     }
@@ -172,7 +191,9 @@ export default function BriefingPage() {
     if (!briefing) return [];
 
     const q = searchQuery.trim().toLowerCase();
+    const muted = preferences?.mutedKeywords ?? [];
     const passesFilters = (a: Article) =>
+      !isMuted(a, muted) &&
       (selectedSources.size === 0 || selectedSources.has(a.sourceName)) &&
       (selectedCategories.size === 0 || selectedCategories.has(a.category || 'other'));
     const matchesSearch = (a: Article) =>
@@ -331,6 +352,30 @@ export default function BriefingPage() {
       sendFeedback(article.id, signal, article.category, article.sourceName),
     [sendFeedback]
   );
+
+  const handleToggleBookmark = useCallback(async (article: Article) => {
+    const wasSaved = bookmarkedUrls.has(article.url);
+    // Optimistic update.
+    setBookmarkedUrls((prev) => {
+      const next = new Set(prev);
+      if (wasSaved) next.delete(article.url);
+      else next.add(article.url);
+      return next;
+    });
+    try {
+      if (wasSaved) {
+        await fetch(`/api/bookmarks?url=${encodeURIComponent(article.url)}`, { method: 'DELETE' });
+      } else {
+        await fetch('/api/bookmarks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ article }),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to toggle bookmark:', err);
+    }
+  }, [bookmarkedUrls]);
 
   // Cluster feedback trains on the cluster's representative (highest-authority) article.
   const handleClusterFeedback = useCallback(
@@ -583,6 +628,8 @@ export default function BriefingPage() {
                         onMarkRead={handleMarkRead}
                         feedback={feedback[item.article.id]}
                         onFeedback={handleFeedback}
+                        isBookmarked={bookmarkedUrls.has(item.article.url)}
+                        onToggleBookmark={handleToggleBookmark}
                       />
                     )
                   )}

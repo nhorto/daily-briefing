@@ -3,6 +3,30 @@ import { FEEDBACK_DELTAS, SCORE_WEIGHTS } from '../types';
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Whether an article should be hidden based on the user's muted keywords.
+ * Matches against the title + excerpt, case-insensitively. A single-word keyword
+ * matches on word boundaries (so "ai" won't match "rain"); a multi-word phrase
+ * matches as a substring. Empty/blank keywords are ignored.
+ */
+export function isMuted(
+  article: Pick<Article, 'title' | 'excerpt'>,
+  mutedKeywords: string[] | undefined
+): boolean {
+  if (!mutedKeywords || mutedKeywords.length === 0) return false;
+
+  const text = `${article.title} ${article.excerpt}`.toLowerCase();
+
+  return mutedKeywords.some((raw) => {
+    const keyword = raw.trim().toLowerCase();
+    if (!keyword) return false;
+    if (keyword.includes(' ')) return text.includes(keyword);
+    return new RegExp(`\\b${escapeRegExp(keyword)}\\b`).test(text);
+  });
+}
+
 /**
  * Calculate a personalization score (0-100) for an article, blending the user's
  * category weight with the learned weight for the article's source.
@@ -84,5 +108,6 @@ export function mapIntelligenceCategoryToSlug(name: string): ArticleCategory {
   if (lower.includes('programming') || lower.includes('language') || lower.includes('developer') || lower.includes('coding')) return 'programming';
   if (lower.includes('devops') || lower.includes('infrastructure') || lower.includes('cloud') || lower.includes('deploy')) return 'devops';
   if (lower.includes('design') || lower.includes('ux') || lower.includes('frontend')) return 'design';
+  if (lower.includes('hardware') || lower.includes('device') || lower.includes('gadget') || lower.includes('chip') || lower.includes('phone')) return 'hardware';
   return 'other';
 }

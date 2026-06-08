@@ -17,7 +17,7 @@ import {
 export function clusterArticles(
   articles: Article[],
   minClusterSize = 2,
-  similarityThreshold = 0.7
+  similarityThreshold = 0.35
 ): { clusters: Cluster[]; individualArticles: Article[] } {
   const clusters: Cluster[] = [];
   const visited = new Set<string>();

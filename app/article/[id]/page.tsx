@@ -8,6 +8,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import ChatPanel from '@/components/ChatPanel';
 import ArticleCard from '@/components/ArticleCard';
 import FeedbackControls from '@/components/ui/FeedbackControls';
+import BookmarkButton from '@/components/ui/BookmarkButton';
 import { getSourceColor } from '@/components/ui/SourcePill';
 import { formatRelativeTime, getFreshnessCategory } from '@/lib/utils/date';
 import { SkeletonPage } from '@/components/ui/Skeleton';
@@ -22,6 +23,7 @@ export default function ArticleDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [feedbackSignal, setFeedbackSignal] = useState<FeedbackSignal | undefined>(undefined);
   const [articleContent, setArticleContent] = useState<string | null>(null);
+  const [isBookmarked, setIsBookmarked] = useState(false);
 
   useEffect(() => {
     async function fetchArticle() {
@@ -43,6 +45,19 @@ export default function ArticleDetailPage() {
           const fbRes = await fetch('/api/feedback');
           const fbData = await fbRes.json();
           if (fbData.success) setFeedbackSignal(fbData.feedback?.[id]);
+        } catch {
+          // non-critical
+        }
+
+        // Is this article already bookmarked?
+        try {
+          const bmRes = await fetch('/api/bookmarks');
+          const bmData = await bmRes.json();
+          if (bmData.success) {
+            setIsBookmarked(
+              (bmData.bookmarks as { url: string }[]).some((b) => b.url === data.article.url)
+            );
+          }
         } catch {
           // non-critical
         }
@@ -99,6 +114,25 @@ export default function ArticleDetailPage() {
       });
     } catch (err) {
       console.error('Failed to record feedback:', err);
+    }
+  }
+
+  async function handleToggleBookmark() {
+    if (!article) return;
+    const wasSaved = isBookmarked;
+    setIsBookmarked(!wasSaved); // optimistic
+    try {
+      if (wasSaved) {
+        await fetch(`/api/bookmarks?url=${encodeURIComponent(article.url)}`, { method: 'DELETE' });
+      } else {
+        await fetch('/api/bookmarks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ article }),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to toggle bookmark:', err);
     }
   }
 
@@ -233,6 +267,10 @@ export default function ArticleDetailPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
             </a>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Save for later:</span>
+              <BookmarkButton saved={isBookmarked} onClick={handleToggleBookmark} size="md" />
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-text-muted">Train your briefing:</span>
               <FeedbackControls value={feedbackSignal} onChange={handleFeedback} />

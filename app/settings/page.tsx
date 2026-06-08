@@ -12,6 +12,7 @@ const CATEGORIES = Object.keys(CATEGORY_META) as ArticleCategory[];
 export default function SettingsPage() {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
+  const [keywordInput, setKeywordInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -57,7 +58,11 @@ export default function SettingsPage() {
       const response = await fetch('/api/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interests: preferences.interests, sources: preferences.sources }),
+        body: JSON.stringify({
+          interests: preferences.interests,
+          sources: preferences.sources,
+          mutedKeywords: preferences.mutedKeywords,
+        }),
       });
 
       const data = await response.json();
@@ -71,6 +76,41 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  // Muted keywords auto-persist on add/remove (the "mute it now" mental model),
+  // independent of the Save button used for the weight sliders.
+  async function persistMutedKeywords(next: string[]) {
+    if (!preferences) return;
+    setPreferences({ ...preferences, mutedKeywords: next }); // optimistic
+    try {
+      const response = await fetch('/api/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interests: preferences.interests,
+          sources: preferences.sources,
+          mutedKeywords: next,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) setPreferences(data.preferences);
+    } catch (error) {
+      console.error('Failed to update muted keywords:', error);
+    }
+  }
+
+  function handleAddKeyword() {
+    const keyword = keywordInput.trim().toLowerCase();
+    setKeywordInput('');
+    if (!keyword || !preferences) return;
+    if (preferences.mutedKeywords.includes(keyword)) return;
+    persistMutedKeywords([...preferences.mutedKeywords, keyword]);
+  }
+
+  function handleRemoveKeyword(keyword: string) {
+    if (!preferences) return;
+    persistMutedKeywords(preferences.mutedKeywords.filter((k) => k !== keyword));
   }
 
   async function handleResetLearning() {
@@ -273,6 +313,64 @@ export default function SettingsPage() {
                     );
                   })}
               </div>
+            )}
+          </Card>
+
+          {/* Muted keywords */}
+          <Card className="p-6">
+            <h2 className="text-base font-bold text-text-primary mb-1">Muted Keywords</h2>
+            <p className="text-sm text-text-secondary mb-4">
+              Hide articles whose title or excerpt matches. A single word matches whole words
+              (so “ai” won’t match “rain”); a multi-word phrase matches anywhere. Takes effect
+              immediately and on the next briefing.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAddKeyword();
+              }}
+              className="flex gap-2 mb-4"
+            >
+              <input
+                type="text"
+                value={keywordInput}
+                onChange={(e) => setKeywordInput(e.target.value)}
+                placeholder="e.g. brexit, crypto, stock market"
+                className="flex-1 px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+              />
+              <button
+                type="submit"
+                disabled={!keywordInput.trim()}
+                className="px-4 py-2 text-sm font-medium text-bg-primary bg-accent rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              >
+                Mute
+              </button>
+            </form>
+
+            {preferences?.mutedKeywords && preferences.mutedKeywords.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {preferences.mutedKeywords.map((keyword) => (
+                  <span
+                    key={keyword}
+                    className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full bg-bg-elevated text-sm text-text-primary"
+                  >
+                    {keyword}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveKeyword(keyword)}
+                      aria-label={`Unmute ${keyword}`}
+                      className="text-text-muted hover:text-text-primary transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-text-muted">
+                No muted keywords yet. Add one above to filter out topics you never want to see.
+              </p>
             )}
           </Card>
 

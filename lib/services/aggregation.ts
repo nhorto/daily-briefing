@@ -12,6 +12,7 @@
 import type { Briefing } from '../types';
 import {
   getActiveSources,
+  getPreferences,
   getSeenUrls,
   markUrlsSeen,
   storeBriefing,
@@ -19,6 +20,7 @@ import {
   updateSourceLastFetched,
 } from '../kv';
 import { enrichArticleImages, fetchFromMultipleSources } from './aggregator';
+import { isMuted } from '../utils/personalization';
 import { clusterArticles, sortClustersBySize, sortArticlesByTime } from './clustering';
 import { summarizeClusters, generateArticleSummaries } from './summarizer';
 import { categorizeArticles } from './categorizer';
@@ -71,12 +73,25 @@ export async function runAggregation(): Promise<AggregationResult> {
     sources.filter((s) => s.type === 'blog' || s.type === 'html').map((s) => s.id)
   );
   const seenUrls = seenTrackedSourceIds.size > 0 ? await getSeenUrls() : new Set<string>();
-  const rawArticles =
+  const seenFiltered =
     seenTrackedSourceIds.size > 0
       ? fetchedArticles.filter(
           (a) => !seenTrackedSourceIds.has(a.sourceId) || !seenUrls.has(a.url)
         )
       : fetchedArticles;
+
+  // Drop muted articles before any AI work — they never appear and never cost
+  // summary/categorization tokens.
+  const mutedKeywords = (await getPreferences()).mutedKeywords ?? [];
+  const rawArticles =
+    mutedKeywords.length > 0
+      ? seenFiltered.filter((a) => !isMuted(a, mutedKeywords))
+      : seenFiltered;
+  if (mutedKeywords.length > 0) {
+    console.log(
+      `[Aggregation] Muted ${seenFiltered.length - rawArticles.length} of ${seenFiltered.length} articles via keywords`
+    );
+  }
 
   if (rawArticles.length === 0) {
     return {

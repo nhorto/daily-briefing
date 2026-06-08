@@ -14,6 +14,7 @@ export type ArticleCategory =
   | 'programming'
   | 'devops'
   | 'design'
+  | 'hardware'
   | 'other';
 
 export const CATEGORY_META: Record<ArticleCategory, { label: string; icon: string }> = {
@@ -24,6 +25,7 @@ export const CATEGORY_META: Record<ArticleCategory, { label: string; icon: strin
   'programming': { label: 'Programming',         icon: '💻' },
   'devops':      { label: 'DevOps & Infra',      icon: '☁️' },
   'design':      { label: 'Design & UX',         icon: '🎨' },
+  'hardware':    { label: 'Hardware & Devices',  icon: '📱' },
   'other':       { label: 'Other',               icon: '📄' },
 };
 
@@ -59,6 +61,14 @@ export interface Article {
   summary?: string; // AI-generated 1-sentence summary
   category?: ArticleCategory; // AI-assigned content category
   imageUrl?: string; // Thumbnail (feed media or og:image), if available
+}
+
+/**
+ * A bookmarked article. We store a full snapshot (not just an ID) so saved
+ * articles survive briefing rollover — the original briefing it came from expires.
+ */
+export interface SavedArticle extends Article {
+  savedAt: string; // ISO timestamp when the article was bookmarked
 }
 
 /**
@@ -133,6 +143,7 @@ export type FeedbackSignal = 'up' | 'down' | 'hide';
 export interface UserPreferences {
   interests: Record<ArticleCategory, number>; // category → weight (0-100)
   sources: Record<string, number>; // sourceName → learned weight (0-100)
+  mutedKeywords: string[]; // articles whose title/excerpt match are filtered out
   updatedAt: string; // ISO timestamp
 }
 
@@ -145,9 +156,11 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     'programming': 50,
     'devops': 50,
     'design': 50,
+    'hardware': 50,
     'other': 50,
   },
   sources: {},
+  mutedKeywords: [],
   updatedAt: new Date().toISOString(),
 };
 
