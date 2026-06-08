@@ -5,6 +5,7 @@ import type { Article, FeedbackSignal } from '@/lib/types';
 import { formatRelativeTime, getFreshnessCategory } from '@/lib/utils/date';
 import Card from '@/components/ui/Card';
 import { getSourceColor } from '@/components/ui/SourcePill';
+import FeedbackControls from '@/components/ui/FeedbackControls';
 
 interface ArticleCardProps {
   article: Article;
@@ -118,31 +119,7 @@ export default function ArticleCard({
 
         {/* Training controls */}
         {onFeedback && (
-          <div className="flex items-center gap-1">
-            <FeedbackButton
-              active={feedback === 'up'}
-              title="More like this"
-              onClick={() => onFeedback(article, 'up')}
-            >
-              👍
-            </FeedbackButton>
-            <FeedbackButton
-              active={feedback === 'down'}
-              title="Less like this"
-              onClick={() => onFeedback(article, 'down')}
-            >
-              👎
-            </FeedbackButton>
-            <FeedbackButton
-              active={false}
-              title="Not interested — hide and train"
-              onClick={() => onFeedback(article, 'hide')}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </FeedbackButton>
-          </div>
+          <FeedbackControls value={feedback} onChange={(s) => onFeedback(article, s)} />
         )}
       </div>
         </div>
@@ -163,34 +140,5 @@ export default function ArticleCard({
         )}
       </div>
     </Card>
-  );
-}
-
-function FeedbackButton({
-  active,
-  title,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  title: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      aria-pressed={active}
-      onClick={onClick}
-      className={`flex items-center justify-center w-7 h-7 rounded-md text-sm transition-colors ${
-        active
-          ? 'bg-accent-muted text-text-primary'
-          : 'text-text-muted hover:bg-bg-elevated hover:text-text-primary'
-      }`}
-    >
-      {children}
-    </button>
   );
 }

@@ -292,40 +292,64 @@ export default function BriefingPage() {
     }
   }, [briefing, allArticles]);
 
-  const handleFeedback = useCallback(async (article: Article, signal: FeedbackSignal) => {
-    const isToggleOff = feedback[article.id] === signal;
+  const sendFeedback = useCallback(
+    async (key: string, signal: FeedbackSignal, category: Article['category'], sourceName: string) => {
+      const isToggleOff = feedback[key] === signal;
 
-    // Optimistic update
-    setFeedback((prev) => {
-      const next = { ...prev };
-      if (isToggleOff) {
-        delete next[article.id];
-      } else {
-        next[article.id] = signal;
+      // Optimistic update
+      setFeedback((prev) => {
+        const next = { ...prev };
+        if (isToggleOff) delete next[key];
+        else next[key] = signal;
+        return next;
+      });
+
+      try {
+        const response = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ articleId: key, signal, category, sourceName }),
+        });
+        const data = await response.json();
+        if (data.success) {
+          setFeedback(data.feedback || {});
+          if (data.preferences) setPreferences(data.preferences);
+        }
+      } catch (err) {
+        console.error('Failed to record feedback:', err);
       }
-      return next;
-    });
+    },
+    [feedback]
+  );
 
+  const handleFeedback = useCallback(
+    (article: Article, signal: FeedbackSignal) =>
+      sendFeedback(article.id, signal, article.category, article.sourceName),
+    [sendFeedback]
+  );
+
+  // Cluster feedback trains on the cluster's representative (highest-authority) article.
+  const handleClusterFeedback = useCallback(
+    (cluster: Cluster, signal: FeedbackSignal) => {
+      const rep = cluster.representativeArticle;
+      return sendFeedback(cluster.id, signal, rep.category, rep.sourceName);
+    },
+    [sendFeedback]
+  );
+
+  const handleMarkClusterRead = useCallback(async (cluster: Cluster) => {
+    const ids = cluster.articles.map((a) => a.id);
+    setReadIds((prev) => new Set([...prev, ...ids]));
     try {
-      const response = await fetch('/api/feedback', {
+      await fetch('/api/articles/read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          articleId: article.id,
-          signal,
-          category: article.category,
-          sourceName: article.sourceName,
-        }),
+        body: JSON.stringify({ articleIds: ids }),
       });
-      const data = await response.json();
-      if (data.success) {
-        setFeedback(data.feedback || {});
-        if (data.preferences) setPreferences(data.preferences);
-      }
     } catch (err) {
-      console.error('Failed to record feedback:', err);
+      console.error('Failed to mark cluster as read:', err);
     }
-  }, [feedback]);
+  }, []);
 
   const unreadCount = allArticles.filter((a) => !readIds.has(a.id)).length;
 
@@ -521,7 +545,14 @@ export default function BriefingPage() {
                 <div className="space-y-3">
                   {feedItems.map((item) =>
                     item.kind === 'cluster' ? (
-                      <ClusterCard key={item.cluster.id} cluster={item.cluster} />
+                      <ClusterCard
+                        key={item.cluster.id}
+                        cluster={item.cluster}
+                        isRead={item.cluster.articles.every((a) => readIds.has(a.id))}
+                        feedback={feedback[item.cluster.id]}
+                        onFeedback={handleClusterFeedback}
+                        onMarkRead={handleMarkClusterRead}
+                      />
                     ) : (
                       <ArticleCard
                         key={item.article.id}

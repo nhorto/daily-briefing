@@ -1,28 +1,55 @@
 'use client';
 
 import { useState } from 'react';
-import type { Cluster } from '@/lib/types';
+import type { Cluster, FeedbackSignal } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils/date';
 import Card from '@/components/ui/Card';
 import SourcePill from '@/components/ui/SourcePill';
+import FeedbackControls from '@/components/ui/FeedbackControls';
 
 interface ClusterCardProps {
   cluster: Cluster;
+  isRead?: boolean;
   onAskAboutTopic?: (clusterId: string) => void;
+  /** Current training signal for this cluster, if any. */
+  feedback?: FeedbackSignal;
+  /** Train the model from this cluster (applied to its representative article). */
+  onFeedback?: (cluster: Cluster, signal: FeedbackSignal) => void;
+  /** Mark every article in the cluster as read. */
+  onMarkRead?: (cluster: Cluster) => void;
 }
 
-export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardProps) {
+export default function ClusterCard({
+  cluster,
+  isRead,
+  onAskAboutTopic,
+  feedback,
+  onFeedback,
+  onMarkRead,
+}: ClusterCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const sourceCount = new Set(cluster.articles.map((a) => a.sourceName)).size;
 
-  const handleAskAboutTopic = () => {
-    if (onAskAboutTopic) {
-      onAskAboutTopic(cluster.id);
-    }
-  };
+  // Collapsed "not interested" state — keeps the action reversible in-session.
+  if (feedback === 'hide') {
+    return (
+      <div className="flex items-center justify-between px-4 py-2 rounded-lg bg-bg-surface border border-border text-xs text-text-muted">
+        <span className="truncate">Not interested · {cluster.title}</span>
+        {onFeedback && (
+          <button
+            type="button"
+            onClick={() => onFeedback(cluster, 'hide')}
+            className="text-accent hover:text-accent-hover transition-colors font-medium flex-shrink-0 ml-3"
+          >
+            Undo
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <Card className="p-5">
+    <Card className={`p-5 ${isRead ? 'opacity-60' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-3">
         <div className="flex-1">
@@ -31,7 +58,7 @@ export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardPro
           </h3>
           <div className="flex items-center gap-2 text-sm text-text-muted">
             <span className="inline-flex items-center gap-1 text-accent font-medium">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M9 7a3 3 0 116 0v3a3 3 0 11-6 0V7z" />
               </svg>
               Covered by {sourceCount} {sourceCount === 1 ? 'source' : 'sources'}
@@ -72,20 +99,27 @@ export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardPro
       </p>
 
       {/* Actions */}
-      <div className="flex gap-3">
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="px-4 py-2 bg-accent text-bg-primary rounded-md hover:bg-accent-hover transition-colors text-sm font-medium"
-        >
-          {isExpanded ? 'Hide' : 'View All'} {cluster.articles.length} Articles
-        </button>
-        {onAskAboutTopic && (
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-3">
           <button
-            onClick={handleAskAboutTopic}
-            className="px-4 py-2 bg-bg-elevated text-text-secondary rounded-md hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="px-4 py-2 bg-accent text-bg-primary rounded-md hover:bg-accent-hover transition-colors text-sm font-medium"
           >
-            Ask About This Topic
+            {isExpanded ? 'Hide' : 'View All'} {cluster.articles.length} Articles
           </button>
+          {onAskAboutTopic && (
+            <button
+              type="button"
+              onClick={() => onAskAboutTopic(cluster.id)}
+              className="px-4 py-2 bg-bg-elevated text-text-secondary rounded-md hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
+            >
+              Ask About This Topic
+            </button>
+          )}
+        </div>
+        {onFeedback && (
+          <FeedbackControls value={feedback} onChange={(s) => onFeedback(cluster, s)} />
         )}
       </div>
 
@@ -99,6 +133,7 @@ export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardPro
                   href={article.url}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => onMarkRead?.(cluster)}
                   className="text-sm text-accent hover:text-accent-hover transition-colors font-medium"
                 >
                   {article.title}
@@ -111,6 +146,7 @@ export default function ClusterCard({ cluster, onAskAboutTopic }: ClusterCardPro
                 href={article.url}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => onMarkRead?.(cluster)}
                 className="text-xs text-accent hover:text-accent-hover transition-colors whitespace-nowrap"
               >
                 Read →
