@@ -202,7 +202,7 @@ function discoverArticleLinks(document: Document, baseUrl: string): string[] {
   const links: string[] = [];
 
   const datePathPattern = /\/\d{4}\/\d{1,2}\//;
-  const blogPathPattern = /\/(blog|posts?|articles?|news|stories|updates?)\//i;
+  const blogPathPattern = /\/(blog|posts?|articles?|news|stories|updates?|engineering|research)\//i;
 
   const containers = document.querySelectorAll('article, main, [class*="post"], [class*="article"], [class*="blog"], [class*="entry"], [class*="story"], [class*="feed"], [class*="list"]');
 
@@ -374,7 +374,7 @@ export function extractImageFromRssItem(item: any, baseUrl: string): string | un
   // First <img> in the content HTML
   const html: string = item['content:encoded'] || item.content || '';
   const match = /<img[^>]+src=["']([^"']+)["']/i.exec(html);
-  if (match?.[1]) return absolutizeUrl(match[1], baseUrl);
+  if (match?.[1]) return absolutizeUrl(decodeEntities(match[1]), baseUrl);
 
   return undefined;
 }
@@ -396,6 +396,80 @@ export function extractOgImage(document: Document, baseUrl: string): string | un
     if (content) return absolutizeUrl(content, baseUrl);
   }
   return undefined;
+}
+
+/**
+ * Extract an og:image / twitter:image from raw HTML using regex (no DOM), so we
+ * can cheaply enrich many articles whose feeds carry no image without spinning
+ * up JSDOM per page. Handles either attribute order (property before/after content).
+ */
+export function extractOgImageFromHtml(html: string, baseUrl: string): string | undefined {
+  const metaTags = html.match(/<meta[^>]+>/gi);
+  if (!metaTags) return undefined;
+
+  // Priority order — prefer og:image, fall back to twitter:image.
+  const keys = ['og:image:url', 'og:image', 'twitter:image:src', 'twitter:image'];
+  for (const key of keys) {
+    const keyPattern = new RegExp(`(?:property|name)\\s*=\\s*["']${key}["']`, 'i');
+    for (const tag of metaTags) {
+      if (keyPattern.test(tag)) {
+        const content = /content\s*=\s*["']([^"']+)["']/i.exec(tag);
+        if (content?.[1]) return absolutizeUrl(decodeEntities(content[1]), baseUrl);
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Best-effort image enrichment: for any article lacking an image, fetch its page
+ * and pull the og:image. Many feeds (TechCrunch, OpenAI, Hacker News) carry no
+ * image, so this is what gives those sources thumbnails.
+ *
+ * Bounded concurrency + a short per-request timeout keep it from dominating
+ * aggregation time; failures are swallowed (the article simply stays imageless).
+ * Mutates the passed articles in place; returns how many images were filled in.
+ */
+export async function enrichArticleImages(
+  articles: Article[],
+  concurrency = 6
+): Promise<number> {
+  const targets = articles.filter((a) => !a.imageUrl);
+  if (targets.length === 0) return 0;
+
+  let cursor = 0;
+  let filled = 0;
+
+  async function worker(): Promise<void> {
+    while (cursor < targets.length) {
+      const article = targets[cursor++]!;
+      try {
+        const response = await fetch(article.url, {
+          headers: { 'User-Agent': 'DailyBriefing/1.0' },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!response.ok) continue;
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('html')) continue;
+
+        const html = await response.text();
+        const image = extractOgImageFromHtml(html, article.url);
+        if (image) {
+          article.imageUrl = image;
+          filled++;
+        }
+      } catch {
+        // Best-effort: leave the article without an image.
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, targets.length) }, () => worker())
+  );
+
+  console.log(`[Aggregator] Image enrichment filled ${filled}/${targets.length} missing images`);
+  return filled;
 }
 
 /**

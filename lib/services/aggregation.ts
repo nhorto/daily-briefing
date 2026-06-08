@@ -12,11 +12,13 @@
 import type { Briefing } from '../types';
 import {
   getActiveSources,
+  getSeenUrls,
+  markUrlsSeen,
   storeBriefing,
   storeIntelligence,
   updateSourceLastFetched,
 } from '../kv';
-import { fetchFromMultipleSources } from './aggregator';
+import { enrichArticleImages, fetchFromMultipleSources } from './aggregator';
 import { clusterArticles, sortClustersBySize, sortArticlesByTime } from './clustering';
 import { summarizeClusters, generateArticleSummaries } from './summarizer';
 import { categorizeArticles } from './categorizer';
@@ -57,10 +59,24 @@ export async function runAggregation(): Promise<AggregationResult> {
   const { start, end } = getBriefingTimeWindow(today);
 
   // Fetch from all sources in parallel
-  const { articles: rawArticles, errors: fetchErrors } = await fetchFromMultipleSources(
+  const { articles: fetchedArticles, errors: fetchErrors } = await fetchFromMultipleSources(
     sources,
     start
   );
+
+  // Scraped sources (blog/html) have unreliable publish dates, so the time
+  // window can't tell new posts from the back-catalog. Instead, gate them by
+  // "have we shown this URL before?" — only genuinely new posts get through.
+  const seenTrackedSourceIds = new Set(
+    sources.filter((s) => s.type === 'blog' || s.type === 'html').map((s) => s.id)
+  );
+  const seenUrls = seenTrackedSourceIds.size > 0 ? await getSeenUrls() : new Set<string>();
+  const rawArticles =
+    seenTrackedSourceIds.size > 0
+      ? fetchedArticles.filter(
+          (a) => !seenTrackedSourceIds.has(a.sourceId) || !seenUrls.has(a.url)
+        )
+      : fetchedArticles;
 
   if (rawArticles.length === 0) {
     return {
@@ -75,6 +91,14 @@ export async function runAggregation(): Promise<AggregationResult> {
       },
       message: 'No new content to aggregate',
     };
+  }
+
+  // Fill in missing thumbnails (non-fatal): feeds like TechCrunch/OpenAI/Hacker
+  // News carry no image, so we fetch each article's og:image best-effort.
+  try {
+    await enrichArticleImages(rawArticles);
+  } catch (error) {
+    console.error('[Aggregation] Image enrichment failed (continuing):', error);
   }
 
   // Cluster
@@ -123,6 +147,15 @@ export async function runAggregation(): Promise<AggregationResult> {
   };
 
   await storeBriefing(briefing);
+
+  // Remember the URLs from scraped sources we just surfaced, so next run only
+  // shows their genuinely new posts.
+  if (seenTrackedSourceIds.size > 0) {
+    const toMark = rawArticles
+      .filter((a) => seenTrackedSourceIds.has(a.sourceId))
+      .map((a) => a.url);
+    await markUrlsSeen(toMark);
+  }
 
   // Intelligence digest (non-fatal)
   try {

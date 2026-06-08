@@ -34,5 +34,32 @@
     "authority": 85,
     "isActive": true,
     "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "seed-venturebeat",
+    "name": "VentureBeat",
+    "url": "https://venturebeat.com/feed/",
+    "type": "rss",
+    "authority": 75,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "seed-openai",
+    "name": "OpenAI",
+    "url": "https://openai.com/news/rss.xml",
+    "type": "rss",
+    "authority": 90,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "seed-anthropic-engineering",
+    "name": "Anthropic Engineering",
+    "url": "https://www.anthropic.com/engineering",
+    "type": "blog",
+    "authority": 90,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00.000Z"
   }
 ]

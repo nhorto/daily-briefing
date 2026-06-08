@@ -10,7 +10,7 @@
 
 import { kv } from '@vercel/kv';
 import { join } from 'node:path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import type { Briefing, DailyIntelligence, FeedbackSignal, Source, UserPreferences } from './types';
 import { DEFAULT_PREFERENCES } from './types';
 
@@ -24,15 +24,23 @@ type LocalEntry = { value: string; expiresAt: number | null };
 const LOCAL_DIR = join(process.cwd(), 'data');
 const LOCAL_PATH = join(LOCAL_DIR, 'local.json');
 let localCache: Record<string, LocalEntry> | null = null;
+let localCacheMtime = 0;
 
+// The in-memory cache is keyed to the file's mtime so writes made by another
+// module instance (Next dev isolates route bundles) or process are picked up —
+// otherwise a reader could serve a stale snapshot indefinitely after a write.
 function loadLocal(): Record<string, LocalEntry> {
-  if (localCache) return localCache;
   try {
-    localCache = existsSync(LOCAL_PATH)
-      ? (JSON.parse(readFileSync(LOCAL_PATH, 'utf8')) as Record<string, LocalEntry>)
-      : {};
+    if (!existsSync(LOCAL_PATH)) {
+      localCache ??= {};
+      return localCache;
+    }
+    const mtime = statSync(LOCAL_PATH).mtimeMs;
+    if (localCache && mtime === localCacheMtime) return localCache;
+    localCache = JSON.parse(readFileSync(LOCAL_PATH, 'utf8')) as Record<string, LocalEntry>;
+    localCacheMtime = mtime;
   } catch {
-    localCache = {};
+    localCache ??= {};
   }
   return localCache;
 }
@@ -40,6 +48,12 @@ function loadLocal(): Record<string, LocalEntry> {
 function persistLocal(data: Record<string, LocalEntry>): void {
   mkdirSync(LOCAL_DIR, { recursive: true });
   writeFileSync(LOCAL_PATH, JSON.stringify(data));
+  localCache = data;
+  try {
+    localCacheMtime = statSync(LOCAL_PATH).mtimeMs;
+  } catch {
+    localCacheMtime = 0;
+  }
 }
 
 // Storage abstraction layer
@@ -116,8 +130,12 @@ const KEYS = {
   ARTICLE_FEEDBACK: 'feedback:articles',
   PREFERENCES: 'user:preferences',
   BRIEFING_DATES: 'briefing:dates',
+  SEEN_URLS: 'seen:urls',
   briefingByDate: (date: string) => `briefing:${date}`,
 };
+
+/** Max number of seen article URLs to retain (most-recent-first). */
+const SEEN_URLS_CAP = 5000;
 
 // TTL Constants (in seconds)
 const TTL = {
@@ -434,6 +452,47 @@ export async function setArticleFeedback(
   }
   await store.set(KEYS.ARTICLE_FEEDBACK, JSON.stringify(map), { ex: TTL.MONTH });
   return map;
+}
+
+/**
+ * Get the set of article URLs we've already surfaced in a briefing. Used to gate
+ * date-unreliable sources (scraped blogs like Anthropic Engineering, whose pages
+ * expose no machine-readable publish date) so their back-catalog isn't re-shown
+ * every run — only genuinely new posts appear.
+ */
+export async function getSeenUrls(): Promise<Set<string>> {
+  try {
+    const data = await store.get<string>(KEYS.SEEN_URLS);
+    if (!data) return new Set();
+    const urls = (typeof data === 'string' ? JSON.parse(data) : data) as string[];
+    return new Set(urls);
+  } catch (error) {
+    console.error('[KV] Error getting seen URLs:', error);
+    return new Set();
+  }
+}
+
+/**
+ * Record article URLs as seen. Newest entries go first and the list is capped,
+ * so the oldest URLs eventually age out (a long-gone post could resurface, which
+ * is fine for rare sources). Persistent (no TTL).
+ */
+export async function markUrlsSeen(urls: string[]): Promise<void> {
+  if (urls.length === 0) return;
+  try {
+    const existing = await getSeenUrls();
+    const merged: string[] = [];
+    const seen = new Set<string>();
+    for (const url of [...urls, ...existing]) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+      merged.push(url);
+      if (merged.length >= SEEN_URLS_CAP) break;
+    }
+    await store.set(KEYS.SEEN_URLS, JSON.stringify(merged));
+  } catch (error) {
+    console.error('[KV] Error marking URLs seen:', error);
+  }
 }
 
 /**

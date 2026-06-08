@@ -1,6 +1,11 @@
 import { test, expect, describe } from 'bun:test';
 import { JSDOM } from 'jsdom';
-import { extractImageFromRssItem, extractOgImage, decodeEntities } from './aggregator';
+import {
+  extractImageFromRssItem,
+  extractOgImage,
+  extractOgImageFromHtml,
+  decodeEntities,
+} from './aggregator';
 
 const BASE = 'https://news.example.com/article';
 
@@ -79,5 +84,44 @@ describe('extractOgImage', () => {
 
   test('returns undefined when no image meta is present', () => {
     expect(extractOgImage(docFrom('<title>x</title>'), BASE)).toBeUndefined();
+  });
+});
+
+describe('extractOgImageFromHtml', () => {
+  test('reads og:image (property before content)', () => {
+    const html = '<head><meta property="og:image" content="https://cdn.example.com/og.jpg"></head>';
+    expect(extractOgImageFromHtml(html, BASE)).toBe('https://cdn.example.com/og.jpg');
+  });
+
+  test('reads og:image with content before property', () => {
+    const html = '<meta content="https://cdn.example.com/og.jpg" property="og:image" />';
+    expect(extractOgImageFromHtml(html, BASE)).toBe('https://cdn.example.com/og.jpg');
+  });
+
+  test('prefers og:image over twitter:image', () => {
+    const html =
+      '<meta name="twitter:image" content="https://cdn.example.com/tw.jpg">' +
+      '<meta property="og:image" content="https://cdn.example.com/og.jpg">';
+    expect(extractOgImageFromHtml(html, BASE)).toBe('https://cdn.example.com/og.jpg');
+  });
+
+  test('falls back to twitter:image', () => {
+    const html = '<meta name="twitter:image" content="https://cdn.example.com/tw.jpg">';
+    expect(extractOgImageFromHtml(html, BASE)).toBe('https://cdn.example.com/tw.jpg');
+  });
+
+  test('absolutizes a relative og:image', () => {
+    const html = '<meta property="og:image" content="/media/hero.jpg">';
+    expect(extractOgImageFromHtml(html, BASE)).toBe('https://news.example.com/media/hero.jpg');
+  });
+
+  test('decodes HTML entities in the extracted URL', () => {
+    const html =
+      '<meta property="og:image" content="https://cdn.example.com/p.jpg?w=140&amp;h=140">';
+    expect(extractOgImageFromHtml(html, BASE)).toBe('https://cdn.example.com/p.jpg?w=140&h=140');
+  });
+
+  test('returns undefined when there is no image meta', () => {
+    expect(extractOgImageFromHtml('<head><title>x</title></head>', BASE)).toBeUndefined();
   });
 });

@@ -7,7 +7,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "test": "bun test",
+    "test": "bun test lib",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
     "format": "biome format --write ."
