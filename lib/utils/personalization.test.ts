@@ -33,6 +33,7 @@ const prefs: UserPreferences = {
     'programming': 50,
     'devops': 50,
     'design': 50,
+    'hardware': 50,
     'other': 20,
   },
   sources: {},
@@ -159,6 +160,7 @@ describe('mapIntelligenceCategoryToSlug', () => {
     expect(mapIntelligenceCategoryToSlug('AI and Machine Learning')).toBe('ai-ml');
     expect(mapIntelligenceCategoryToSlug('Security & Privacy')).toBe('security');
     expect(mapIntelligenceCategoryToSlug('Startup funding news')).toBe('business');
+    expect(mapIntelligenceCategoryToSlug('New Device Reviews')).toBe('hardware');
   });
 
   test('falls back to "other" for unknown names', () => {

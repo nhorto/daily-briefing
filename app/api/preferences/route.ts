@@ -4,7 +4,7 @@ import type { ArticleCategory, UserPreferences } from '@/lib/types';
 
 const VALID_CATEGORIES: ArticleCategory[] = [
   'ai-ml', 'business', 'science', 'security',
-  'programming', 'devops', 'design', 'other',
+  'programming', 'devops', 'design', 'hardware', 'other',
 ];
 
 export async function GET() {

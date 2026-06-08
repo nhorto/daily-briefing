@@ -108,5 +108,6 @@ export function mapIntelligenceCategoryToSlug(name: string): ArticleCategory {
   if (lower.includes('programming') || lower.includes('language') || lower.includes('developer') || lower.includes('coding')) return 'programming';
   if (lower.includes('devops') || lower.includes('infrastructure') || lower.includes('cloud') || lower.includes('deploy')) return 'devops';
   if (lower.includes('design') || lower.includes('ux') || lower.includes('frontend')) return 'design';
+  if (lower.includes('hardware') || lower.includes('device') || lower.includes('gadget') || lower.includes('chip') || lower.includes('phone')) return 'hardware';
   return 'other';
 }

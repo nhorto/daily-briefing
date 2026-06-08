@@ -14,6 +14,7 @@ export type ArticleCategory =
   | 'programming'
   | 'devops'
   | 'design'
+  | 'hardware'
   | 'other';
 
 export const CATEGORY_META: Record<ArticleCategory, { label: string; icon: string }> = {
@@ -24,6 +25,7 @@ export const CATEGORY_META: Record<ArticleCategory, { label: string; icon: strin
   'programming': { label: 'Programming',         icon: '💻' },
   'devops':      { label: 'DevOps & Infra',      icon: '☁️' },
   'design':      { label: 'Design & UX',         icon: '🎨' },
+  'hardware':    { label: 'Hardware & Devices',  icon: '📱' },
   'other':       { label: 'Other',               icon: '📄' },
 };
 
@@ -146,6 +148,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     'programming': 50,
     'devops': 50,
     'design': 50,
+    'hardware': 50,
     'other': 50,
   },
   sources: {},

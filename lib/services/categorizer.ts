@@ -11,7 +11,7 @@ const BATCH_SIZE = 30;
 
 const VALID_CATEGORIES: ArticleCategory[] = [
   'ai-ml', 'business', 'science', 'security',
-  'programming', 'devops', 'design', 'other',
+  'programming', 'devops', 'design', 'hardware', 'other',
 ];
 
 /**
@@ -51,15 +51,30 @@ async function categorizeBatch(
 
   const prompt = `Categorize each article into exactly one category. Return a JSON object mapping article ID to category slug.
 
-Valid categories:
-- ai-ml: AI, machine learning, LLMs, neural networks
-- business: Startups, funding, acquisitions, corporate news
-- science: Research papers, academic findings, scientific discoveries
-- security: Cybersecurity, privacy, vulnerabilities, data breaches
-- programming: Languages, frameworks, developer tools, coding
-- devops: Infrastructure, cloud, deployment, CI/CD, containers
-- design: UX, design systems, frontend design, accessibility
-- other: Everything that doesn't fit above
+Categories (choose the single best fit):
+- ai-ml: AI, machine learning, LLMs, chatbots, models, AI products/features, AI policy
+- business: Startups, funding, M&A, earnings, markets, industry moves, tech policy/regulation, legal/antitrust
+- science: Research, academia, space, biology, health/medicine, climate, environment, physics
+- security: Cybersecurity, hacking, breaches, vulnerabilities, privacy, surveillance, encryption
+- programming: Programming languages, frameworks, libraries, developer tools, software engineering
+- devops: Cloud, infrastructure, databases, deployment, CI/CD, containers, networking, SRE
+- design: UX/UI, product design, design systems, typography, accessibility, creative tools
+- hardware: Consumer devices, phones, laptops, wearables, chips/semiconductors, gadgets, robotics, EVs, hardware reviews
+- other: ONLY if it genuinely fits none of the above
+
+Guidance:
+- Choose the CLOSEST category; avoid "other" unless nothing fits. Most tech, business, science, and consumer-product stories fit a specific category.
+- A device or gadget announcement → hardware (use ai-ml if the story is primarily about an AI feature).
+- Government/regulation/legal stories about tech → business; about surveillance/privacy → security.
+- Health, medicine, biology, space, climate → science.
+
+Examples:
+- "Apple announces new iPhone lineup" → hardware
+- "OpenAI launches GPT-5" → ai-ml
+- "Startup raises $40M Series B" → business
+- "New Rust release improves async" → programming
+- "State bans sale of location data" → security
+- "Why are cells small?" → science
 
 Articles:
 ${articleList}
