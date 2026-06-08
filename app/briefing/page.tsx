@@ -256,6 +256,10 @@ export default function BriefingPage() {
     });
   }, []);
 
+  const handleClearCategories = useCallback(() => {
+    setSelectedCategories(new Set());
+  }, []);
+
   const handleMarkRead = useCallback(async (articleId: string) => {
     if (readIds.has(articleId)) return;
 
@@ -496,6 +500,16 @@ export default function BriefingPage() {
                     For You
                   </button>
                 </div>
+                <button
+                  onClick={handleClearCategories}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedCategories.size === 0
+                      ? 'bg-accent-muted text-text-primary'
+                      : 'bg-bg-elevated text-text-secondary'
+                  }`}
+                >
+                  All
+                </button>
                 {Array.from(categoryCounts.entries())
                   .sort(([, a], [, b]) => b - a)
                   .map(([category, count]) => (
@@ -511,6 +525,14 @@ export default function BriefingPage() {
                       {CATEGORY_META[category]?.icon} {CATEGORY_META[category]?.label} ({count})
                     </button>
                   ))}
+                {selectedCategories.size > 0 && (
+                  <button
+                    onClick={handleClearCategories}
+                    className="px-2.5 py-1 text-xs font-medium text-accent hover:text-accent-hover transition-colors"
+                  >
+                    Clear ({selectedCategories.size})
+                  </button>
+                )}
               </div>
 
               {/* Mobile source filter */}
