@@ -1,6 +1,6 @@
 import { test, expect, describe } from 'bun:test';
 import { JSDOM } from 'jsdom';
-import { extractImageFromRssItem, extractOgImage } from './aggregator';
+import { extractImageFromRssItem, extractOgImage, decodeEntities } from './aggregator';
 
 const BASE = 'https://news.example.com/article';
 
@@ -37,6 +37,22 @@ describe('extractImageFromRssItem', () => {
 
   test('returns undefined when there is no image', () => {
     expect(extractImageFromRssItem({ content: '<p>no images here</p>' }, BASE)).toBeUndefined();
+  });
+});
+
+describe('decodeEntities', () => {
+  test('decodes numeric entities', () => {
+    expect(decodeEntities('Apple&#8217;s event')).toBe('Apple’s event');
+    expect(decodeEntities('a &#x2014; b')).toBe('a — b');
+  });
+
+  test('decodes common named entities', () => {
+    expect(decodeEntities('Tom &amp; Jerry')).toBe('Tom & Jerry');
+    expect(decodeEntities('&ldquo;quoted&rdquo;&hellip;')).toBe('“quoted”…');
+  });
+
+  test('leaves plain text untouched', () => {
+    expect(decodeEntities('nothing to decode')).toBe('nothing to decode');
   });
 });
 

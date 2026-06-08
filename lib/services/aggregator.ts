@@ -513,7 +513,7 @@ function normalizeURL(url: string): string {
  * Extract clean excerpt from content (max 300 chars)
  */
 function extractExcerpt(content: string): string {
-  const text = content.replace(/<[^>]*>/g, '');
+  const text = decodeEntities(content.replace(/<[^>]*>/g, ''));
   const cleaned = text.replace(/\s+/g, ' ').trim();
 
   if (cleaned.length <= 300) return cleaned;
@@ -533,17 +533,45 @@ function extractExcerpt(content: string): string {
 }
 
 /**
+ * Decode HTML entities (numeric + common named) so titles/excerpts read cleanly
+ * instead of showing raw entities like &#8217; or &amp;.
+ */
+export function decodeEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, n) => {
+      try {
+        return String.fromCodePoint(parseInt(n, 10));
+      } catch {
+        return _;
+      }
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => {
+      try {
+        return String.fromCodePoint(parseInt(h, 16));
+      } catch {
+        return _;
+      }
+    })
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&hellip;/g, '…')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&lsquo;/g, '‘')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&ldquo;/g, '“')
+    .replace(/&rdquo;/g, '”')
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&'); // decode last so it can't double-decode
+}
+
+/**
  * Clean text (remove extra whitespace, decode HTML entities)
  */
 function cleanText(text: string): string {
-  return text
-    .replace(/\s+/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .trim();
+  return decodeEntities(text).replace(/\s+/g, ' ').trim();
 }
 
 /**
