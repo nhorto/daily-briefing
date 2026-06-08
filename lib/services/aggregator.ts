@@ -43,7 +43,7 @@ export async function fetchFromSource(
       // Auto-detect: try RSS first, fallback to HTML
       try {
         return await fetchRSSFeed(source, sinceTimestamp);
-      } catch (rssError) {
+      } catch (_rssError) {
         console.log(`[Aggregator] RSS failed for ${source.name}, trying HTML...`);
         return await fetchHTMLPage(source, sinceTimestamp);
       }
@@ -101,7 +101,7 @@ async function fetchRSSFeed(source: Source, sinceTimestamp?: string): Promise<Ar
 /**
  * Fetch and parse HTML webpage using Readability
  */
-async function fetchHTMLPage(source: Source, sinceTimestamp?: string): Promise<Article[]> {
+async function fetchHTMLPage(source: Source, _sinceTimestamp?: string): Promise<Article[]> {
   const response = await fetch(source.url, {
     headers: {
       'User-Agent': 'DailyBriefing/1.0',
@@ -206,18 +206,22 @@ function discoverArticleLinks(document: Document, baseUrl: string): string[] {
 
   const containers = document.querySelectorAll('article, main, [class*="post"], [class*="article"], [class*="blog"], [class*="entry"], [class*="story"], [class*="feed"], [class*="list"]');
 
-  let candidateAnchors: Element[] = [];
+  const candidateAnchors: Element[] = [];
 
   if (containers.length > 0) {
     containers.forEach((container) => {
       const anchors = container.querySelectorAll('a[href]');
-      anchors.forEach((a) => candidateAnchors.push(a));
+      anchors.forEach((a) => {
+        candidateAnchors.push(a);
+      });
     });
   } else {
     const body = document.querySelector('body');
     if (body) {
       const allAnchors = body.querySelectorAll('a[href]');
-      allAnchors.forEach((a) => candidateAnchors.push(a));
+      allAnchors.forEach((a) => {
+        candidateAnchors.push(a);
+      });
     }
   }
 
@@ -242,7 +246,7 @@ function discoverArticleLinks(document: Document, baseUrl: string): string[] {
       continue;
     }
 
-    if (absoluteUrl === baseUrl || absoluteUrl === baseUrl + '/') continue;
+    if (absoluteUrl === baseUrl || absoluteUrl === `${baseUrl}/`) continue;
 
     const path = new URL(absoluteUrl).pathname;
     if (isNavigationLink(path)) continue;
@@ -415,7 +419,7 @@ function extractPublishedDate(document: Document): string | null {
       if (value) {
         try {
           const date = new Date(value);
-          if (!isNaN(date.getTime())) {
+          if (!Number.isNaN(date.getTime())) {
             return date.toISOString();
           }
         } catch {
@@ -496,7 +500,9 @@ function normalizeURL(url: string): string {
   try {
     const parsed = new URL(url);
     const paramsToRemove = ['utm_source', 'utm_medium', 'utm_campaign', 'ref', 'source'];
-    paramsToRemove.forEach((param) => parsed.searchParams.delete(param));
+    paramsToRemove.forEach((param) => {
+      parsed.searchParams.delete(param);
+    });
     return parsed.toString();
   } catch {
     return url;
@@ -523,7 +529,7 @@ function extractExcerpt(content: string): string {
     return truncated.slice(0, lastSentence + 1);
   }
 
-  return truncated + '...';
+  return `${truncated}...`;
 }
 
 /**

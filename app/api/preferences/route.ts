@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { getPreferences, storePreferences } from '@/lib/kv';
 import type { ArticleCategory, UserPreferences } from '@/lib/types';
 

@@ -4,7 +4,7 @@
  * Returns briefing data for specified date (defaults to today)
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { getTodaysBriefing, getBriefingByDate } from '@/lib/kv';
 import { getTodayDateString } from '@/lib/utils/date';
 

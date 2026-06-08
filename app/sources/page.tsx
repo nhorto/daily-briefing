@@ -23,7 +23,7 @@ export default function SourcesPage() {
   useEffect(() => {
     fetchSources();
     fetchBriefingStats();
-  }, []);
+  }, [fetchSources, fetchBriefingStats]);
 
   async function fetchSources() {
     try {
@@ -234,7 +234,7 @@ export default function SourcesPage() {
                     min="0"
                     max="100"
                     value={formData.authority}
-                    onChange={(e) => setFormData({ ...formData, authority: parseInt(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, authority: parseInt(e.target.value, 10) })}
                     className="w-full px-4 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent text-text-primary"
                   />
                   <p className="text-xs text-text-muted mt-1">

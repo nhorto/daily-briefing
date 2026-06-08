@@ -3,12 +3,8 @@
  * Uses GPT-4o-mini to categorize articles in bulk for minimal cost
  */
 
-import OpenAI from 'openai';
 import type { Article, ArticleCategory } from '../types';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { getOpenAI } from './openai';
 
 const MODEL = 'gpt-4o-mini';
 const BATCH_SIZE = 30;
@@ -71,7 +67,7 @@ ${articleList}
 Return ONLY valid JSON like: {"article_id": "category_slug", ...}`;
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: MODEL,
       messages: [
         {

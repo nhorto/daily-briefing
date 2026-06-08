@@ -7,7 +7,6 @@ import { nanoid } from 'nanoid';
 import type { Article, Cluster } from '../types';
 import {
   areArticlesDuplicates,
-  calculateTitleSimilarity,
   calculateArticleSimilarity,
 } from '../utils/similarity';
 
@@ -60,7 +59,9 @@ export function clusterArticles(
       });
 
       // Mark all articles as visited
-      clusterArticles.forEach((a) => visited.add(a.id));
+      clusterArticles.forEach((a) => {
+        visited.add(a.id);
+      });
     }
   }
 

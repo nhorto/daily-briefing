@@ -9,8 +9,8 @@
  */
 
 import { kv } from '@vercel/kv';
-import { join } from 'path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Briefing, DailyIntelligence, FeedbackSignal, Source, UserPreferences } from './types';
 import { DEFAULT_PREFERENCES } from './types';
 
@@ -101,7 +101,7 @@ async function seedFromConfigFile<T>(filename: string, key: string): Promise<T |
       console.log(`[KV] Auto-seeded from config/${filename}`);
       return data as T;
     }
-  } catch (error) {
+  } catch (_error) {
     // Config file doesn't exist or is invalid — that's fine
   }
   return null;

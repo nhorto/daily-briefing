@@ -41,6 +41,7 @@ export default function BriefingPage() {
     fetchPreferences();
     fetchFeedback();
     fetchDates();
+    // Run once on mount; the fetch helpers are stable for this purpose.
   }, []);
 
   async function fetchDates() {
@@ -372,7 +373,7 @@ export default function BriefingPage() {
                     {selectedDate ? 'Briefing' : "Today's Briefing"}
                   </h1>
                   <p className="text-text-muted text-sm mt-0.5">
-                    {new Date(briefing.date + 'T00:00:00').toLocaleDateString('en-US', {
+                    {new Date(`${briefing.date}T00:00:00`).toLocaleDateString('en-US', {
                       weekday: 'long',
                       year: 'numeric',
                       month: 'long',
@@ -396,7 +397,7 @@ export default function BriefingPage() {
                         .filter((d) => d !== getTodayDateString())
                         .map((d) => (
                           <option key={d} value={d}>
-                            {new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
+                            {new Date(`${d}T00:00:00`).toLocaleDateString('en-US', {
                               month: 'short',
                               day: 'numeric',
                             })}

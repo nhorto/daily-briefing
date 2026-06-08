@@ -22,6 +22,7 @@ Use **Bun** as the package manager and script runner:
 - `bun run build` / `bun run start` — production build / serve
 - `bun run test` — run the test suite (`bun test`)
 - `bun run typecheck` — type-check with `tsc --noEmit`
+- `bun run lint` — lint with Biome (`bun run format` to auto-format)
 - `bunx <pkg>` — run a package binary (not npx)
 
 Bun loads `.env.local` automatically — **do not** add `dotenv`.
@@ -69,4 +70,6 @@ Permanent config (sources, preferences) is **also** committed as JSON under
 
 ## Before you finish
 
-Run `bun run typecheck` and `bun run test`. Both should pass clean.
+Run `bun run typecheck`, `bun run test`, and `bun run lint`. All should pass
+clean (lint may emit a11y warnings — those are tracked separately). CI runs the
+same checks plus `bun run build` on every push.

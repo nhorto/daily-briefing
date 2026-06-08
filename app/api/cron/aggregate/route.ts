@@ -5,7 +5,7 @@
  * instead (see app/briefing/actions.ts) so it never needs the secret.
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { runAggregation, NoActiveSourcesError } from '@/lib/services/aggregation';
 
 export const maxDuration = 300; // 5 minutes max execution time

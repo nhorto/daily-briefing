@@ -88,28 +88,28 @@ describe('applyFeedback', () => {
 
   test('"up" raises the category and source weights', () => {
     const next = applyFeedback(prefs, article, 'up');
-    expect(next.interests['science']).toBe(58); // 50 + 8
-    expect(next.sources['Source']).toBe(58); // 50 + 8
+    expect(next.interests.science).toBe(58); // 50 + 8
+    expect(next.sources.Source).toBe(58); // 50 + 8
   });
 
   test('"down" lowers the weights', () => {
     const next = applyFeedback(prefs, article, 'down');
-    expect(next.interests['science']).toBe(42); // 50 - 8
-    expect(next.sources['Source']).toBe(42);
+    expect(next.interests.science).toBe(42); // 50 - 8
+    expect(next.sources.Source).toBe(42);
   });
 
   test('"hide" lowers more aggressively', () => {
     const next = applyFeedback(prefs, article, 'hide');
-    expect(next.interests['science']).toBe(35); // 50 - 15
-    expect(next.sources['Source']).toBe(35);
+    expect(next.interests.science).toBe(35); // 50 - 15
+    expect(next.sources.Source).toBe(35);
   });
 
   test('clamps to 0-100', () => {
     const high: UserPreferences = { ...prefs, interests: { ...prefs.interests, science: 98 }, sources: { Source: 2 } };
     const up = applyFeedback(high, article, 'up');
-    expect(up.interests['science']).toBe(100); // clamped
+    expect(up.interests.science).toBe(100); // clamped
     const down = applyFeedback(high, article, 'down');
-    expect(down.sources['Source']).toBe(0); // clamped
+    expect(down.sources.Source).toBe(0); // clamped
   });
 
   test('does not mutate the input preferences', () => {

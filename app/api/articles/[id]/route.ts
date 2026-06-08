@@ -4,12 +4,12 @@
  * Returns a single article by ID along with related articles from the same cluster
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { getTodaysBriefing } from '@/lib/kv';
-import type { Article, Cluster } from '@/lib/types';
+import type { Article, } from '@/lib/types';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;

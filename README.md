@@ -125,7 +125,11 @@ bun run build       # production build
 bun run start       # serve the production build
 bun run test        # run the test suite (bun test)
 bun run typecheck   # tsc --noEmit
+bun run lint        # lint with Biome
+bun run format      # auto-format with Biome
 ```
+
+CI (GitHub Actions) runs lint, typecheck, test, and build on every push.
 
 ## Documentation
 

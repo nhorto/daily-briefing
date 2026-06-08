@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { storeSources, storePreferences } from '@/lib/kv';
 import type { Source, UserPreferences } from '@/lib/types';
 
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       results.push(`Imported ${sources.length} sources`);
     }
 
-    if (preferences && preferences.interests) {
+    if (preferences?.interests) {
       await storePreferences(preferences as UserPreferences);
       results.push('Imported preferences');
     }

@@ -6,7 +6,7 @@
 
 import { streamText, convertToModelMessages } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
 import type { Article } from '@/lib/types';
 
 export const runtime = 'edge';

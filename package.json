@@ -8,9 +8,12 @@
     "build": "next build",
     "start": "next start",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/bun": "latest",
     "@types/jsdom": "^27.0.0",

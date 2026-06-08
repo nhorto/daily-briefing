@@ -19,7 +19,6 @@ interface ChatPanelProps {
 export default function ChatPanel({
   mode,
   articles,
-  articleId,
   className = '',
   isOpen,
   onClose,
