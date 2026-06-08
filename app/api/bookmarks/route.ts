@@ -6,7 +6,13 @@
  */
 
 import { type NextRequest, NextResponse } from 'next/server';
-import { getBookmarks, addBookmark, removeBookmark } from '@/lib/kv';
+import {
+  getBookmarks,
+  addBookmark,
+  removeBookmark,
+  getCachedEmbedding,
+  updateProfile,
+} from '@/lib/kv';
 import type { Article } from '@/lib/types';
 
 export async function GET() {
@@ -33,7 +39,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Only treat a genuinely new save as a positive profile signal (addBookmark
+    // is idempotent by URL, so repeated saves shouldn't double-count).
+    const existed = (await getBookmarks()).some((b) => b.url === article.url);
     const bookmarks = await addBookmark(article);
+    if (!existed && article.id) {
+      const embedding = await getCachedEmbedding(article.id);
+      if (embedding) await updateProfile(embedding, 1);
+    }
     return NextResponse.json({ success: true, bookmarks });
   } catch (error) {
     return NextResponse.json(
