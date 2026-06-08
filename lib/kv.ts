@@ -1,36 +1,45 @@
 /**
- * Vercel KV Storage Layer
- * Handles all interactions with Vercel KV (Redis)
- * Falls back to SQLite for local development (persists across restarts)
+ * Storage Layer
+ * Uses Vercel KV (Redis) when configured, otherwise falls back to a local
+ * JSON file store for self-hosting / development.
+ *
+ * The local store is deliberately runtime-agnostic (plain `node:fs` + JSON) so it
+ * works identically under both the Node runtime that Next.js uses for `dev`,
+ * `build`, and `start`, and under Bun — with no native dependencies.
  */
 
 import { kv } from '@vercel/kv';
-import { Database } from 'bun:sqlite';
 import { join } from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import type { Briefing, DailyIntelligence, Source, UserPreferences } from './types';
 import { DEFAULT_PREFERENCES } from './types';
 
 // Check if KV is configured
 const hasKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
 
-// SQLite fallback for local development — persists to data/local.db
-let db: Database | null = null;
+// --- Local JSON file store (used when Vercel KV is not configured) ---
+// Persists to data/local.json. Values are stored as strings (callers serialize
+// with JSON.stringify), alongside an optional expiry timestamp for TTL support.
+type LocalEntry = { value: string; expiresAt: number | null };
+const LOCAL_DIR = join(process.cwd(), 'data');
+const LOCAL_PATH = join(LOCAL_DIR, 'local.json');
+let localCache: Record<string, LocalEntry> | null = null;
 
-function getLocalDb(): Database {
-  if (!db) {
-    const dbPath = join(process.cwd(), 'data', 'local.db');
-    // Ensure directory exists
-    const { mkdirSync } = require('fs');
-    mkdirSync(join(process.cwd(), 'data'), { recursive: true });
-
-    db = new Database(dbPath);
-    db.run(`CREATE TABLE IF NOT EXISTS kv (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      expires_at INTEGER
-    )`);
+function loadLocal(): Record<string, LocalEntry> {
+  if (localCache) return localCache;
+  try {
+    localCache = existsSync(LOCAL_PATH)
+      ? (JSON.parse(readFileSync(LOCAL_PATH, 'utf8')) as Record<string, LocalEntry>)
+      : {};
+  } catch {
+    localCache = {};
   }
-  return db;
+  return localCache;
+}
+
+function persistLocal(data: Record<string, LocalEntry>): void {
+  mkdirSync(LOCAL_DIR, { recursive: true });
+  writeFileSync(LOCAL_PATH, JSON.stringify(data));
 }
 
 // Storage abstraction layer
@@ -39,28 +48,30 @@ const store = {
     if (hasKV) {
       return await kv.get<T>(key);
     }
-    const localDb = getLocalDb();
-    const row = localDb.query('SELECT value, expires_at FROM kv WHERE key = ?').get(key) as { value: string; expires_at: number | null } | null;
-    if (!row) return null;
+    const data = loadLocal();
+    const entry = data[key];
+    if (!entry) return null;
 
     // Check TTL expiration
-    if (row.expires_at && Date.now() > row.expires_at) {
-      localDb.query('DELETE FROM kv WHERE key = ?').run(key);
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      delete data[key];
+      persistLocal(data);
       return null;
     }
 
-    return row.value as T;
+    return entry.value as T;
   },
 
-  async set(key: string, value: any, options?: { ex?: number }): Promise<void> {
+  async set(key: string, value: string, options?: { ex?: number }): Promise<void> {
     if (hasKV) {
       await kv.set(key, value, options as any);
     } else {
-      const localDb = getLocalDb();
-      const expiresAt = options?.ex ? Date.now() + options.ex * 1000 : null;
-      localDb.query(
-        'INSERT OR REPLACE INTO kv (key, value, expires_at) VALUES (?, ?, ?)'
-      ).run(key, value, expiresAt);
+      const data = loadLocal();
+      data[key] = {
+        value,
+        expiresAt: options?.ex ? Date.now() + options.ex * 1000 : null,
+      };
+      persistLocal(data);
     }
   },
 
@@ -68,13 +79,14 @@ const store = {
     if (hasKV) {
       await kv.del(key);
     } else {
-      const localDb = getLocalDb();
-      localDb.query('DELETE FROM kv WHERE key = ?').run(key);
+      const data = loadLocal();
+      delete data[key];
+      persistLocal(data);
     }
   },
 };
 
-console.log(`[KV] Using ${hasKV ? 'Vercel KV' : 'local SQLite'} storage`);
+console.log(`[KV] Using ${hasKV ? 'Vercel KV' : 'local JSON'} storage`);
 
 /**
  * Auto-seed from a config JSON file when the DB is empty.
@@ -83,9 +95,8 @@ console.log(`[KV] Using ${hasKV ? 'Vercel KV' : 'local SQLite'} storage`);
 async function seedFromConfigFile<T>(filename: string, key: string): Promise<T | null> {
   try {
     const configPath = join(process.cwd(), 'config', filename);
-    const file = Bun.file(configPath);
-    if (await file.exists()) {
-      const data = await file.json();
+    if (existsSync(configPath)) {
+      const data = JSON.parse(readFileSync(configPath, 'utf8'));
       await store.set(key, JSON.stringify(data));
       console.log(`[KV] Auto-seeded from config/${filename}`);
       return data as T;

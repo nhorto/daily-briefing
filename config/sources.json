@@ -1,0 +1,38 @@
+[
+  {
+    "id": "seed-techcrunch",
+    "name": "TechCrunch",
+    "url": "https://techcrunch.com/feed/",
+    "type": "rss",
+    "authority": 85,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "seed-the-verge",
+    "name": "The Verge",
+    "url": "https://www.theverge.com/rss/index.xml",
+    "type": "rss",
+    "authority": 80,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "seed-hacker-news",
+    "name": "Hacker News",
+    "url": "https://news.ycombinator.com/rss",
+    "type": "rss",
+    "authority": 80,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "seed-ars-technica",
+    "name": "Ars Technica",
+    "url": "https://feeds.arstechnica.com/arstechnica/index",
+    "type": "rss",
+    "authority": 85,
+    "isActive": true,
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  }
+]

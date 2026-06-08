@@ -1,106 +1,72 @@
+# CLAUDE.md
 
-Default to using Bun instead of Node.js.
+Guidance for AI assistants (and humans) working in this repository.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## What this project is
 
-## APIs
+**Daily Briefing** is a personal content aggregator built with **Next.js 16 (App Router)**
+running on the **Bun** runtime. It fetches RSS/web sources, deduplicates similar
+articles into topic clusters, generates AI summaries and a daily "intelligence"
+digest, and offers an interactive chat over the day's content.
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+This is a Next.js app — **not** a `Bun.serve()` app. Use the Next.js App Router
+(`app/`), API route handlers (`app/api/**/route.ts`), and React Server/Client
+Components. Do not introduce `Bun.serve()`, Express, or Vite here.
 
-## Testing
+## Toolchain
 
-Use `bun test` to run tests.
+Use **Bun** as the package manager and script runner:
 
-```ts#index.test.ts
-import { test, expect } from "bun:test";
+- `bun install` — install dependencies (not npm/yarn/pnpm)
+- `bun run dev` — start the dev server (`next dev --turbopack`)
+- `bun run build` / `bun run start` — production build / serve
+- `bun run test` — run the test suite (`bun test`)
+- `bun run typecheck` — type-check with `tsc --noEmit`
+- `bunx <pkg>` — run a package binary (not npx)
 
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+Bun loads `.env.local` automatically — **do not** add `dotenv`.
+
+## Architecture
+
+```
+app/            Next.js App Router (pages + API route handlers)
+  api/          Route handlers: briefing, chat, sources, preferences,
+                intelligence, articles, config import/export, cron/aggregate
+components/     React components (cards, chat, layout, ui/ primitives)
+lib/
+  kv.ts         Storage layer (Vercel KV in prod, local JSON file locally)
+  types.ts      Shared TypeScript types — the source of truth for data shapes
+  services/     aggregator, clustering, categorizer, summarizer, intelligence
+  utils/        similarity, personalization, date (pure functions, unit-tested)
+config/         Committed seed files (sources.json) auto-loaded on first boot
+data/           Local JSON store (gitignored, created at runtime)
+docs/           Architecture, setup, and hosting guides
 ```
 
-## Frontend
+## Storage model
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+`lib/kv.ts` is a thin abstraction over a key/value store:
 
-Server:
+- **Self-hosted / local (default):** falls back to a **local JSON file store** at
+  `data/local.json` when `KV_REST_API_URL` / `KV_REST_API_TOKEN` are unset. Works
+  under both the Node and Bun runtimes (Next runs route handlers under Node), with
+  no native dependencies; persists across restarts and honors TTLs.
+- **Cloud (optional):** uses **Vercel KV (Redis)** when those env vars are set.
 
-```ts#index.ts
-import index from "./index.html"
+Permanent config (sources, preferences) is **also** committed as JSON under
+`config/` and auto-seeded into the store on first boot. Ephemeral data
+(briefings, intelligence, read status) is never committed — it regenerates.
 
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
+## Conventions
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+- TypeScript is `strict` with `noUncheckedIndexedAccess` — handle `undefined`
+  from indexed access and array lookups explicitly.
+- Keep pure logic in `lib/utils` and `lib/services` so it stays unit-testable;
+  co-locate tests as `*.test.ts` next to the code.
+- AI model IDs live at the top of each service file in `lib/services/` as a
+  `MODEL` constant — change them there, not inline.
+- Add new data shapes to `lib/types.ts` rather than redefining inline.
 
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
+## Before you finish
 
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+Run `bun run typecheck` and `bun run test`. Both should pass clean.

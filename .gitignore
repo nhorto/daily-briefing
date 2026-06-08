@@ -27,9 +27,9 @@ yarn-error.log*
 .pnpm-debug.log*
 lerna-debug.log*
 
-# Local env files
+# Local env files (but keep the committed example)
 .env*
-.env.local.example
+!.env.local.example
 
 # Vercel
 .vercel
@@ -45,8 +45,11 @@ next-env.d.ts
 *.swo
 *~
 
-# Bun
+# Bun (this is a Bun project — keep only bun.lock)
 bun.lockb
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Local dev database
 data/
