@@ -1,6 +1,7 @@
 import { test, expect, describe } from 'bun:test';
 import {
   calculateStringSimilarity,
+  calculateTokenSimilarity,
   areArticlesDuplicates,
   calculateArticleSimilarity,
   normalizeText,
@@ -47,6 +48,30 @@ describe('calculateStringSimilarity', () => {
   });
 });
 
+describe('calculateTokenSimilarity', () => {
+  test('same words in any order score 1', () => {
+    expect(calculateTokenSimilarity('OpenAI funding round', 'funding round OpenAI')).toBe(1);
+  });
+
+  test('same story with different wording shares keywords', () => {
+    const sim = calculateTokenSimilarity(
+      'OpenAI raises $40 billion in record funding round',
+      'OpenAI secures record $40B funding'
+    );
+    expect(sim).toBeGreaterThan(0.3);
+  });
+
+  test('unrelated headlines score near zero', () => {
+    expect(
+      calculateTokenSimilarity('New species of frog discovered', 'Senate passes spending bill')
+    ).toBe(0);
+  });
+
+  test('shared stopwords do not create similarity', () => {
+    expect(calculateTokenSimilarity('the new and the', 'the of a the')).toBe(0);
+  });
+});
+
 describe('areArticlesDuplicates', () => {
   test('same URL is always a duplicate', () => {
     const a = makeArticle({ id: 'a', url: 'https://x.com/1', title: 'Totally different one' });
@@ -60,9 +85,41 @@ describe('areArticlesDuplicates', () => {
     expect(areArticlesDuplicates(a, b)).toBe(true);
   });
 
+  test('same story across sources clusters via shared keywords', () => {
+    const a = makeArticle({
+      id: 'a',
+      url: 'https://x.com/1',
+      title: 'OpenAI raises $40 billion in record funding round',
+      excerpt: 'The company closed a record round backed by major investors.',
+    });
+    const b = makeArticle({
+      id: 'b',
+      url: 'https://y.com/2',
+      title: 'OpenAI secures record $40B funding round',
+      excerpt: 'OpenAI announced a record funding round led by major backers.',
+    });
+    expect(areArticlesDuplicates(a, b)).toBe(true);
+  });
+
   test('unrelated articles are not duplicates', () => {
     const a = makeArticle({ id: 'a', url: 'https://x.com/1', title: 'Stock market hits record high' });
     const b = makeArticle({ id: 'b', url: 'https://y.com/2', title: 'New species of frog discovered' });
+    expect(areArticlesDuplicates(a, b)).toBe(false);
+  });
+
+  test('mid-range edit distance without shared keywords does not cluster', () => {
+    // These share no significant words but happen to have ~0.36 char-similarity;
+    // edit distance alone must not be enough to cluster them.
+    const a = makeArticle({
+      id: 'a',
+      url: 'https://x.com/1',
+      title: 'Apple is redesigning Screen Time and overhauling child controls',
+    });
+    const b = makeArticle({
+      id: 'b',
+      url: 'https://y.com/2',
+      title: '"Chat is dead": OpenAI preps overhaul of ChatGPT',
+    });
     expect(areArticlesDuplicates(a, b)).toBe(false);
   });
 });
