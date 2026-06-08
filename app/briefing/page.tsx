@@ -9,46 +9,10 @@ import ChatPanel from '@/components/ChatPanel';
 import DashboardLayout from '@/components/DashboardLayout';
 import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import { SkeletonPage } from '@/components/ui/Skeleton';
-import { sortByPreference, getPersonalizationScore, isMuted } from '@/lib/utils/personalization';
-import { rankIndices, type RankSignal } from '@/lib/utils/ranking';
-import { calculateTokenSimilarity } from '@/lib/utils/similarity';
+import { sortByPreference, isMuted } from '@/lib/utils/personalization';
+import { type FeedItem, feedItemTime, rankFeedItems } from '@/lib/utils/feed';
 import { getTodayDateString } from '@/lib/utils/date';
 import { regenerateBriefingAction } from './actions';
-
-/** A row in the feed: either a multi-source topic cluster or a single article. */
-type FeedItem = { kind: 'cluster'; cluster: Cluster } | { kind: 'article'; article: Article };
-
-/** The articles backing a feed item (all of a cluster, or the single article). */
-function feedItemArticles(it: FeedItem): Article[] {
-  return it.kind === 'cluster' ? it.cluster.articles : [it.article];
-}
-
-/** A feed item's title, for topic-similarity (MMR) comparison. */
-function feedItemTitle(it: FeedItem): string {
-  return it.kind === 'cluster' ? it.cluster.title : it.article.title;
-}
-
-/** Build the ranking signal for a feed item from its articles + preferences.
- *  `fitById` maps article id → semantic fit (cosine to the profile); empty until
- *  the profile exists, in which case the item's fit stays undefined (cold start). */
-function feedItemSignal(
-  it: FeedItem,
-  prefs: UserPreferences,
-  fitById: Record<string, number>
-): RankSignal {
-  const articles = feedItemArticles(it);
-  const newest = Math.max(...articles.map((a) => new Date(a.publishedAt).getTime()));
-  const fits = articles
-    .map((a) => fitById[a.id])
-    .filter((x): x is number => typeof x === 'number');
-  return {
-    clusterSize: articles.length,
-    sourceQuality: Math.max(...articles.map((a) => a.sourceAuthority ?? 50)),
-    ageHours: (Date.now() - newest) / 3_600_000,
-    affinity: Math.max(...articles.map((a) => getPersonalizationScore(a, prefs))),
-    fit: fits.length > 0 ? Math.max(...fits) : undefined,
-  };
-}
 
 export default function BriefingPage() {
   const [briefing, setBriefing] = useState<Briefing | null>(null);
@@ -262,19 +226,12 @@ export default function BriefingPage() {
       if (matches(article)) items.push({ kind: 'article', article });
     }
 
-    const itemTime = (it: FeedItem) =>
-      Math.max(...feedItemArticles(it).map((a) => new Date(a.publishedAt).getTime()));
-
     if (sortMode === 'personalized' && preferences) {
-      // Rank by importance (cluster size × source quality × freshness) blended
-      // with learned affinity and semantic fit (embeddings), then MMR-diversify
-      // and slot in a little exploration.
-      const signals = items.map((it) => feedItemSignal(it, preferences, fitScores));
-      const similarity = (i: number, j: number) =>
-        calculateTokenSimilarity(feedItemTitle(items[i]!), feedItemTitle(items[j]!));
-      return rankIndices(signals, similarity).map((i) => items[i]!);
+      // Rank by the shared engine: importance + affinity + semantic fit,
+      // MMR-diversified with a little exploration.
+      return rankFeedItems(items, preferences, fitScores);
     }
-    return [...items].sort((a, b) => itemTime(b) - itemTime(a));
+    return [...items].sort((a, b) => feedItemTime(b) - feedItemTime(a));
   }, [briefing, selectedSources, selectedCategories, sortMode, preferences, searchQuery, fitScores]);
 
   // Get unique categories with counts for filter pills
