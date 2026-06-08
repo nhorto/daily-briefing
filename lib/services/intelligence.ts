@@ -3,12 +3,8 @@
  * Generates a structured daily intelligence summary from all articles and clusters
  */
 
-import OpenAI from 'openai';
 import type { Article, Cluster, DailyIntelligence } from '../types';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { getOpenAI } from './openai';
 
 const MODEL = 'gpt-4o';
 
@@ -80,7 +76,7 @@ Every article ID must appear in exactly one category. Priority determines displa
 Respond with ONLY valid JSON, no markdown code fences.`;
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: MODEL,
       messages: [
         {

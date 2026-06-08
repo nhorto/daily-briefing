@@ -7,9 +7,13 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "test": "bun test lib",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/bun": "latest",
     "@types/jsdom": "^27.0.0",
@@ -20,6 +24,9 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "optionalDependencies": {
+    "lightningcss-win32-arm64-msvc": "1.30.2"
   },
   "dependencies": {
     "@ai-sdk/openai": "2",

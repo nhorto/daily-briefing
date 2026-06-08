@@ -14,6 +14,12 @@ const rssParser = new Parser({
   headers: {
     'User-Agent': 'DailyBriefing/1.0',
   },
+  customFields: {
+    item: [
+      ['media:content', 'mediaContent', { keepArray: true }],
+      ['media:thumbnail', 'mediaThumbnail'],
+    ],
+  },
 });
 
 /**
@@ -37,7 +43,7 @@ export async function fetchFromSource(
       // Auto-detect: try RSS first, fallback to HTML
       try {
         return await fetchRSSFeed(source, sinceTimestamp);
-      } catch (rssError) {
+      } catch (_rssError) {
         console.log(`[Aggregator] RSS failed for ${source.name}, trying HTML...`);
         return await fetchHTMLPage(source, sinceTimestamp);
       }
@@ -57,7 +63,9 @@ async function fetchRSSFeed(source: Source, sinceTimestamp?: string): Promise<Ar
 
   const sinceDate = sinceTimestamp ? new Date(sinceTimestamp) : null;
 
-  for (const item of feed.items) {
+  // rss-parser's Item typing is awkward once customFields are added; treat items
+  // loosely so we can read standard and custom fields uniformly.
+  for (const item of feed.items as any[]) {
     // Skip if no URL or title
     if (!item.link || !item.title) continue;
 
@@ -82,6 +90,7 @@ async function fetchRSSFeed(source: Source, sinceTimestamp?: string): Promise<Ar
       sourceName: source.name,
       sourceAuthority: source.authority,
       fetchedAt: new Date().toISOString(),
+      imageUrl: extractImageFromRssItem(item, source.url),
     });
   }
 
@@ -92,7 +101,7 @@ async function fetchRSSFeed(source: Source, sinceTimestamp?: string): Promise<Ar
 /**
  * Fetch and parse HTML webpage using Readability
  */
-async function fetchHTMLPage(source: Source, sinceTimestamp?: string): Promise<Article[]> {
+async function fetchHTMLPage(source: Source, _sinceTimestamp?: string): Promise<Article[]> {
   const response = await fetch(source.url, {
     headers: {
       'User-Agent': 'DailyBriefing/1.0',
@@ -125,6 +134,7 @@ async function fetchHTMLPage(source: Source, sinceTimestamp?: string): Promise<A
       sourceName: source.name,
       sourceAuthority: source.authority,
       fetchedAt: new Date().toISOString(),
+      imageUrl: extractOgImage(dom.window.document, source.url),
     },
   ];
 
@@ -192,22 +202,26 @@ function discoverArticleLinks(document: Document, baseUrl: string): string[] {
   const links: string[] = [];
 
   const datePathPattern = /\/\d{4}\/\d{1,2}\//;
-  const blogPathPattern = /\/(blog|posts?|articles?|news|stories|updates?)\//i;
+  const blogPathPattern = /\/(blog|posts?|articles?|news|stories|updates?|engineering|research)\//i;
 
   const containers = document.querySelectorAll('article, main, [class*="post"], [class*="article"], [class*="blog"], [class*="entry"], [class*="story"], [class*="feed"], [class*="list"]');
 
-  let candidateAnchors: Element[] = [];
+  const candidateAnchors: Element[] = [];
 
   if (containers.length > 0) {
     containers.forEach((container) => {
       const anchors = container.querySelectorAll('a[href]');
-      anchors.forEach((a) => candidateAnchors.push(a));
+      anchors.forEach((a) => {
+        candidateAnchors.push(a);
+      });
     });
   } else {
     const body = document.querySelector('body');
     if (body) {
       const allAnchors = body.querySelectorAll('a[href]');
-      allAnchors.forEach((a) => candidateAnchors.push(a));
+      allAnchors.forEach((a) => {
+        candidateAnchors.push(a);
+      });
     }
   }
 
@@ -232,7 +246,7 @@ function discoverArticleLinks(document: Document, baseUrl: string): string[] {
       continue;
     }
 
-    if (absoluteUrl === baseUrl || absoluteUrl === baseUrl + '/') continue;
+    if (absoluteUrl === baseUrl || absoluteUrl === `${baseUrl}/`) continue;
 
     const path = new URL(absoluteUrl).pathname;
     if (isNavigationLink(path)) continue;
@@ -307,9 +321,186 @@ async function fetchSingleArticle(url: string, source: Source): Promise<Article 
       sourceName: source.name,
       sourceAuthority: source.authority,
       fetchedAt: new Date().toISOString(),
+      imageUrl: extractOgImage(dom.window.document, url),
     };
   } catch (error) {
     console.warn(`[Aggregator] Error fetching article ${url}:`, (error as Error).message);
+    return null;
+  }
+}
+
+/** Does this URL look like a direct image link? */
+function looksLikeImage(url: string): boolean {
+  return /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(url);
+}
+
+/** Resolve a possibly-relative image URL against the page/feed URL. */
+function absolutizeUrl(url: string, baseUrl: string): string {
+  try {
+    return new URL(url, baseUrl).toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Pull a thumbnail URL out of an RSS item: enclosure, media:thumbnail,
+ * media:content, or the first <img> in the content HTML.
+ */
+export function extractImageFromRssItem(item: any, baseUrl: string): string | undefined {
+  // RSS <enclosure>
+  const enclosure = item.enclosure;
+  if (enclosure?.url && (enclosure.type?.startsWith('image') || looksLikeImage(enclosure.url))) {
+    return absolutizeUrl(enclosure.url, baseUrl);
+  }
+
+  // <media:thumbnail>
+  const thumb = item.mediaThumbnail?.$?.url || item.mediaThumbnail?.url;
+  if (thumb) return absolutizeUrl(thumb, baseUrl);
+
+  // <media:content> (may be a single object or an array)
+  const media = item.mediaContent;
+  const mediaItems = Array.isArray(media) ? media : media ? [media] : [];
+  for (const m of mediaItems) {
+    const url = m?.$?.url;
+    if (!url) continue;
+    const medium = m?.$?.medium;
+    const type = m?.$?.type;
+    if (medium === 'image' || type?.startsWith('image') || looksLikeImage(url)) {
+      return absolutizeUrl(url, baseUrl);
+    }
+  }
+
+  // First <img> in the content HTML
+  const html: string = item['content:encoded'] || item.content || '';
+  const match = /<img[^>]+src=["']([^"']+)["']/i.exec(html);
+  if (match?.[1]) return absolutizeUrl(decodeEntities(match[1]), baseUrl);
+
+  return undefined;
+}
+
+/**
+ * Extract an og:image / twitter:image from an HTML document (absolute URL).
+ */
+export function extractOgImage(document: Document, baseUrl: string): string | undefined {
+  const selectors = [
+    'meta[property="og:image"]',
+    'meta[property="og:image:url"]',
+    'meta[name="og:image"]',
+    'meta[name="twitter:image"]',
+    'meta[name="twitter:image:src"]',
+    'meta[property="twitter:image"]',
+  ];
+  for (const selector of selectors) {
+    const content = document.querySelector(selector)?.getAttribute('content');
+    if (content) return absolutizeUrl(content, baseUrl);
+  }
+  return undefined;
+}
+
+/**
+ * Extract an og:image / twitter:image from raw HTML using regex (no DOM), so we
+ * can cheaply enrich many articles whose feeds carry no image without spinning
+ * up JSDOM per page. Handles either attribute order (property before/after content).
+ */
+export function extractOgImageFromHtml(html: string, baseUrl: string): string | undefined {
+  const metaTags = html.match(/<meta[^>]+>/gi);
+  if (!metaTags) return undefined;
+
+  // Priority order — prefer og:image, fall back to twitter:image.
+  const keys = ['og:image:url', 'og:image', 'twitter:image:src', 'twitter:image'];
+  for (const key of keys) {
+    const keyPattern = new RegExp(`(?:property|name)\\s*=\\s*["']${key}["']`, 'i');
+    for (const tag of metaTags) {
+      if (keyPattern.test(tag)) {
+        const content = /content\s*=\s*["']([^"']+)["']/i.exec(tag);
+        if (content?.[1]) return absolutizeUrl(decodeEntities(content[1]), baseUrl);
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Best-effort image enrichment: for any article lacking an image, fetch its page
+ * and pull the og:image. Many feeds (TechCrunch, OpenAI, Hacker News) carry no
+ * image, so this is what gives those sources thumbnails.
+ *
+ * Bounded concurrency + a short per-request timeout keep it from dominating
+ * aggregation time; failures are swallowed (the article simply stays imageless).
+ * Mutates the passed articles in place; returns how many images were filled in.
+ */
+export async function enrichArticleImages(
+  articles: Article[],
+  concurrency = 6
+): Promise<number> {
+  const targets = articles.filter((a) => !a.imageUrl);
+  if (targets.length === 0) return 0;
+
+  let cursor = 0;
+  let filled = 0;
+
+  async function worker(): Promise<void> {
+    while (cursor < targets.length) {
+      const article = targets[cursor++]!;
+      try {
+        const response = await fetch(article.url, {
+          headers: { 'User-Agent': 'DailyBriefing/1.0' },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!response.ok) continue;
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('html')) continue;
+
+        const html = await response.text();
+        const image = extractOgImageFromHtml(html, article.url);
+        if (image) {
+          article.imageUrl = image;
+          filled++;
+        }
+      } catch {
+        // Best-effort: leave the article without an image.
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, targets.length) }, () => worker())
+  );
+
+  console.log(`[Aggregator] Image enrichment filled ${filled}/${targets.length} missing images`);
+  return filled;
+}
+
+/**
+ * Fetch an article page and extract its full readable text via Readability,
+ * cleaned and capped. Used by the chat so it can answer detailed questions about
+ * an article (and summarize it) instead of relying on just the title + short
+ * excerpt. Returns null if the page can't be fetched or no text is extractable.
+ */
+export async function fetchArticleFullText(
+  url: string,
+  maxChars = 12000
+): Promise<string | null> {
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'DailyBriefing/1.0' },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) return null;
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('html')) return null;
+
+    const html = await response.text();
+    const dom = new JSDOM(html, { url });
+    const article = new Readability(dom.window.document).parse();
+
+    const text = article?.textContent ? cleanText(article.textContent) : '';
+    if (!text) return null;
+
+    return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+  } catch {
     return null;
   }
 }
@@ -335,7 +526,7 @@ function extractPublishedDate(document: Document): string | null {
       if (value) {
         try {
           const date = new Date(value);
-          if (!isNaN(date.getTime())) {
+          if (!Number.isNaN(date.getTime())) {
             return date.toISOString();
           }
         } catch {
@@ -416,7 +607,9 @@ function normalizeURL(url: string): string {
   try {
     const parsed = new URL(url);
     const paramsToRemove = ['utm_source', 'utm_medium', 'utm_campaign', 'ref', 'source'];
-    paramsToRemove.forEach((param) => parsed.searchParams.delete(param));
+    paramsToRemove.forEach((param) => {
+      parsed.searchParams.delete(param);
+    });
     return parsed.toString();
   } catch {
     return url;
@@ -427,7 +620,7 @@ function normalizeURL(url: string): string {
  * Extract clean excerpt from content (max 300 chars)
  */
 function extractExcerpt(content: string): string {
-  const text = content.replace(/<[^>]*>/g, '');
+  const text = decodeEntities(content.replace(/<[^>]*>/g, ''));
   const cleaned = text.replace(/\s+/g, ' ').trim();
 
   if (cleaned.length <= 300) return cleaned;
@@ -443,21 +636,49 @@ function extractExcerpt(content: string): string {
     return truncated.slice(0, lastSentence + 1);
   }
 
-  return truncated + '...';
+  return `${truncated}...`;
+}
+
+/**
+ * Decode HTML entities (numeric + common named) so titles/excerpts read cleanly
+ * instead of showing raw entities like &#8217; or &amp;.
+ */
+export function decodeEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, n) => {
+      try {
+        return String.fromCodePoint(parseInt(n, 10));
+      } catch {
+        return _;
+      }
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => {
+      try {
+        return String.fromCodePoint(parseInt(h, 16));
+      } catch {
+        return _;
+      }
+    })
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&hellip;/g, '…')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&lsquo;/g, '‘')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&ldquo;/g, '“')
+    .replace(/&rdquo;/g, '”')
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&'); // decode last so it can't double-decode
 }
 
 /**
  * Clean text (remove extra whitespace, decode HTML entities)
  */
 function cleanText(text: string): string {
-  return text
-    .replace(/\s+/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .trim();
+  return decodeEntities(text).replace(/\s+/g, ' ').trim();
 }
 
 /**

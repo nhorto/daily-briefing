@@ -17,8 +17,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    // Path mapping for Next.js
-    "baseUrl": ".",
+    // Path mapping for Next.js (paths resolve relative to this file)
     "paths": {
       "@/*": [
         "./*"

@@ -58,6 +58,7 @@ export interface Article {
   fetchedAt: string; // ISO timestamp of when we fetched this
   summary?: string; // AI-generated 1-sentence summary
   category?: ArticleCategory; // AI-assigned content category
+  imageUrl?: string; // Thumbnail (feed media or og:image), if available
 }
 
 /**
@@ -117,10 +118,21 @@ export interface DailyIntelligence {
 }
 
 /**
- * User Preferences for personalized content ordering
+ * A training signal the user gives on an article.
+ * - `up`   → "more like this" (boosts its category + source)
+ * - `down` → "less like this" (lowers its category + source)
+ * - `hide` → "not interested" (strong lower + hides it from the feed)
+ */
+export type FeedbackSignal = 'up' | 'down' | 'hide';
+
+/**
+ * User Preferences — the learned/manual model used to rank content.
+ * Category weights start from the settings sliders and are nudged by feedback;
+ * source weights are learned purely from feedback.
  */
 export interface UserPreferences {
   interests: Record<ArticleCategory, number>; // category → weight (0-100)
+  sources: Record<string, number>; // sourceName → learned weight (0-100)
   updatedAt: string; // ISO timestamp
 }
 
@@ -135,7 +147,18 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     'design': 50,
     'other': 50,
   },
+  sources: {},
   updatedAt: new Date().toISOString(),
+};
+
+/** Weight applied to category vs source signal when scoring an article. */
+export const SCORE_WEIGHTS = { category: 0.6, source: 0.4 } as const;
+
+/** How far each feedback signal nudges the relevant weights (clamped 0-100). */
+export const FEEDBACK_DELTAS: Record<FeedbackSignal, number> = {
+  up: 8,
+  down: -8,
+  hide: -15,
 };
 
 /**

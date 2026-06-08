@@ -4,7 +4,7 @@
  * Generates a detailed summary for a specific intelligence category when clicked
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { getTodaysBriefing } from '@/lib/kv';
 import type { Article } from '@/lib/types';

@@ -2,7 +2,7 @@
  * Date utility functions for briefing system
  */
 
-import { format, parseISO, subDays, startOfDay } from 'date-fns';
+import { format, parseISO, subDays, } from 'date-fns';
 
 /**
  * Get today's date in YYYY-MM-DD format

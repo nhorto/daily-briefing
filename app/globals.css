@@ -26,8 +26,8 @@
   --color-border: #1F2937;
   --color-border-hover: #374151;
 
-  /* Fonts */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Fonts (--font-inter is injected by next/font in app/layout.tsx) */
+  --font-sans: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 

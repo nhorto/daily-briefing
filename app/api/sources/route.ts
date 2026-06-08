@@ -4,7 +4,7 @@
  * POST /api/sources - Add new source
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import type { Source } from '@/lib/types';
 import { getSources, addSource, updateSource, deleteSource } from '@/lib/kv';

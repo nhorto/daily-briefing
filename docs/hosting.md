@@ -9,11 +9,13 @@ The app stores two kinds of data:
 | **Config** | Sources, preferences | Permanent | Yes |
 | **Ephemeral** | Briefings, intelligence, read status | 24h-30d | No |
 
-### Why NOT push the SQLite database to GitHub
+### Why NOT commit the local data store to GitHub
 
-- **Binary files** don't diff — every change replaces the entire file
-- **Merge conflicts** are unresolvable (two machines edit the DB independently)
-- **Repo bloat** — git stores every version forever, even after deletion
+The local store lives at `data/local.json` (gitignored). Don't commit it:
+
+- **Churn** — ephemeral briefing content rewrites the file daily, polluting history
+- **Merge conflicts** — two machines editing the store independently can't reconcile
+- **Repo bloat** — git keeps every version forever, even after deletion
 - **Secrets risk** — briefing content could contain sensitive data
 
 ### The right approach: Seed files
@@ -22,7 +24,7 @@ Instead, export your **permanent config** (sources + preferences) to committed J
 
 ```
 data/
-  local.db          ← gitignored, local only
+  local.json        ← gitignored, local only
 
 config/
   sources.json      ← committed, syncs via git
@@ -42,9 +44,13 @@ The API routes `GET /api/config/export` and `POST /api/config/import` handle thi
 
 ## Hosting Options
 
-### Option 1: Vercel (Recommended)
+> **This project's default is self-hosting on a local JSON file store** (Option 2).
+> Vercel + KV (Option 1) is fully supported as a managed alternative — pick whichever fits.
 
-The app is already configured for Vercel. This is the simplest path to production.
+### Option 1: Vercel + KV (managed alternative)
+
+The app is also configured for Vercel. This is the simplest path to a managed,
+always-on deployment with built-in cron.
 
 **What you get:**
 - Free hosting (Hobby tier)
@@ -72,14 +78,15 @@ The app is already configured for Vercel. This is the simplest path to productio
 
 **Cron schedule:** Already configured in `vercel.json` — runs at 8:00 AM UTC daily.
 
-### Option 2: Self-hosted (VPS / Raspberry Pi / Home Server)
+### Option 2: Self-hosted on a local file store (default, recommended)
 
-Run it yourself on any machine with Node.js or Bun.
+Run it yourself on any machine with Bun. No Redis/KV needed — storage falls back to
+a local JSON file (`data/local.json`) automatically, with no native dependencies.
 
 **What you get:**
 - Full control over data
 - No vendor lock-in
-- Can use SQLite in production (no Redis needed)
+- Uses a local JSON file in production (no Redis needed)
 - Works offline on local network
 
 **Setup:**
@@ -95,7 +102,7 @@ Run it yourself on any machine with Node.js or Bun.
 - OpenAI API: ~$5-10/month
 - **Total: ~$5-15/month**
 
-**Note:** SQLite works fine for self-hosting since there's only one user. No need for Redis/KV.
+**Note:** the local JSON file store works fine for self-hosting since there's only one user. No need for Redis/KV.
 
 ### Option 3: Cloudflare Pages + D1
 
@@ -123,7 +130,7 @@ Platforms that support persistent storage and cron.
 
 **What you get:**
 - Simple deploys from GitHub
-- Persistent volumes (SQLite works in production)
+- Persistent volumes (the local file store works in production)
 - Built-in cron support
 - More control than Vercel, less work than self-hosting
 
@@ -138,12 +145,14 @@ Platforms that support persistent storage and cron.
 
 | Scenario | Best Option | Why |
 |----------|-------------|-----|
-| Just want it live ASAP | **Vercel** | Already configured, zero setup |
-| Privacy-focused / offline use | **Self-hosted** | Full data control, works on LAN |
+| Privacy-focused / offline use | **Self-hosted (local file)** | Full data control, works on LAN, no cloud account |
+| Want zero infra to manage | **Vercel + KV** | Already configured, free tier, managed cron/storage |
+| Cost-sensitive but cloud-hosted | **Vercel** or **Cloudflare** | Most generous free tiers |
 | Multi-user or scaling later | **Vercel** or **Railway** | Managed infrastructure |
-| Cost-sensitive | **Vercel** or **Cloudflare** | Most generous free tiers |
 
-For a personal daily briefing tool, **Vercel is the clear winner** — it's already configured, free, and handles cron/storage/deployment out of the box.
+For a personal daily briefing tool this repo defaults to **self-hosting on a local
+file store** — no accounts, no Redis, no native deps, your data stays on your machine.
+Reach for **Vercel + KV** when you'd rather not run or schedule anything yourself.
 
 ---
 
@@ -161,7 +170,7 @@ curl http://localhost:3000/api/config/export > config/export.json
 
 ### Import on a new machine
 ```bash
-# The app auto-imports from config/ on first boot if KV/SQLite is empty
+# The app auto-imports from config/ on first boot if the store is empty
 # Or manually:
 curl -X POST http://localhost:3000/api/config/import \
   -H "Content-Type: application/json" \

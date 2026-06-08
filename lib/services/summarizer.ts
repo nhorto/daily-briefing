@@ -3,13 +3,8 @@
  * Uses OpenAI GPT-4o to generate summaries for clusters and individual articles
  */
 
-import OpenAI from 'openai';
 import type { Article, Cluster } from '../types';
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { getOpenAI } from './openai';
 
 const MODEL = 'gpt-4o';
 const TEMPERATURE = 0.3; // Low temperature for factual consistency
@@ -56,7 +51,7 @@ Synthesize these articles into a 2-3 sentence summary that:
 Summary:`;
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: MODEL,
       messages: [
         {
@@ -95,7 +90,7 @@ Content: ${article.excerpt}
 One-sentence summary:`;
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: MODEL,
       messages: [
         {
