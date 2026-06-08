@@ -10,11 +10,35 @@ import DashboardLayout from '@/components/DashboardLayout';
 import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 import { sortByPreference, getPersonalizationScore, isMuted } from '@/lib/utils/personalization';
+import { rankIndices, type RankSignal } from '@/lib/utils/ranking';
+import { calculateTokenSimilarity } from '@/lib/utils/similarity';
 import { getTodayDateString } from '@/lib/utils/date';
 import { regenerateBriefingAction } from './actions';
 
 /** A row in the feed: either a multi-source topic cluster or a single article. */
 type FeedItem = { kind: 'cluster'; cluster: Cluster } | { kind: 'article'; article: Article };
+
+/** The articles backing a feed item (all of a cluster, or the single article). */
+function feedItemArticles(it: FeedItem): Article[] {
+  return it.kind === 'cluster' ? it.cluster.articles : [it.article];
+}
+
+/** A feed item's title, for topic-similarity (MMR) comparison. */
+function feedItemTitle(it: FeedItem): string {
+  return it.kind === 'cluster' ? it.cluster.title : it.article.title;
+}
+
+/** Build the ranking signal for a feed item from its articles + preferences. */
+function feedItemSignal(it: FeedItem, prefs: UserPreferences): RankSignal {
+  const articles = feedItemArticles(it);
+  const newest = Math.max(...articles.map((a) => new Date(a.publishedAt).getTime()));
+  return {
+    clusterSize: articles.length,
+    sourceQuality: Math.max(...articles.map((a) => a.sourceAuthority ?? 50)),
+    ageHours: (Date.now() - newest) / 3_600_000,
+    affinity: Math.max(...articles.map((a) => getPersonalizationScore(a, prefs))),
+  };
+}
 
 export default function BriefingPage() {
   const [briefing, setBriefing] = useState<Briefing | null>(null);
@@ -217,23 +241,15 @@ export default function BriefingPage() {
     }
 
     const itemTime = (it: FeedItem) =>
-      it.kind === 'article'
-        ? new Date(it.article.publishedAt).getTime()
-        : Math.max(...it.cluster.articles.map((a) => new Date(a.publishedAt).getTime()));
-
-    const itemScore = (it: FeedItem) => {
-      if (!preferences) return 0;
-      return it.kind === 'article'
-        ? getPersonalizationScore(it.article, preferences)
-        : Math.max(...it.cluster.articles.map((a) => getPersonalizationScore(a, preferences)));
-    };
+      Math.max(...feedItemArticles(it).map((a) => new Date(a.publishedAt).getTime()));
 
     if (sortMode === 'personalized' && preferences) {
-      // Tier by score (10-pt buckets) so similar items stay newest-first.
-      return [...items].sort((a, b) => {
-        const tierDiff = Math.floor(itemScore(b) / 10) - Math.floor(itemScore(a) / 10);
-        return tierDiff !== 0 ? tierDiff : itemTime(b) - itemTime(a);
-      });
+      // Rank by importance (cluster size × source quality × freshness) blended
+      // with learned affinity, then MMR-diversify and slot in a little exploration.
+      const signals = items.map((it) => feedItemSignal(it, preferences));
+      const similarity = (i: number, j: number) =>
+        calculateTokenSimilarity(feedItemTitle(items[i]!), feedItemTitle(items[j]!));
+      return rankIndices(signals, similarity).map((i) => items[i]!);
     }
     return [...items].sort((a, b) => itemTime(b) - itemTime(a));
   }, [briefing, selectedSources, selectedCategories, sortMode, preferences, searchQuery]);
