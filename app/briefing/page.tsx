@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import type { Briefing, Article, UserPreferences, ArticleCategory } from '@/lib/types';
+import type { Briefing, Article, UserPreferences, ArticleCategory, FeedbackSignal } from '@/lib/types';
 import { CATEGORY_META } from '@/lib/types';
 import ArticleCard from '@/components/ArticleCard';
 import ChatPanel from '@/components/ChatPanel';
@@ -18,13 +18,27 @@ export default function BriefingPage() {
   const [selectedCategories, setSelectedCategories] = useState<Set<ArticleCategory>>(new Set());
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
+  const [feedback, setFeedback] = useState<Record<string, FeedbackSignal>>({});
   const [sortMode, setSortMode] = useState<'time' | 'personalized'>('time');
 
   useEffect(() => {
     fetchBriefing();
     fetchReadIds();
     fetchPreferences();
+    fetchFeedback();
   }, []);
+
+  async function fetchFeedback() {
+    try {
+      const response = await fetch('/api/feedback');
+      const data = await response.json();
+      if (data.success) {
+        setFeedback(data.feedback || {});
+      }
+    } catch (err) {
+      console.error('Failed to fetch feedback:', err);
+    }
+  }
 
   async function fetchPreferences() {
     try {
@@ -194,6 +208,41 @@ export default function BriefingPage() {
     }
   }, [briefing, allArticles]);
 
+  const handleFeedback = useCallback(async (article: Article, signal: FeedbackSignal) => {
+    const isToggleOff = feedback[article.id] === signal;
+
+    // Optimistic update
+    setFeedback((prev) => {
+      const next = { ...prev };
+      if (isToggleOff) {
+        delete next[article.id];
+      } else {
+        next[article.id] = signal;
+      }
+      return next;
+    });
+
+    try {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          articleId: article.id,
+          signal,
+          category: article.category,
+          sourceName: article.sourceName,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setFeedback(data.feedback || {});
+        if (data.preferences) setPreferences(data.preferences);
+      }
+    } catch (err) {
+      console.error('Failed to record feedback:', err);
+    }
+  }, [feedback]);
+
   const unreadCount = allArticles.filter((a) => !readIds.has(a.id)).length;
 
   return (
@@ -346,6 +395,8 @@ export default function BriefingPage() {
                       article={article}
                       isRead={readIds.has(article.id)}
                       onMarkRead={handleMarkRead}
+                      feedback={feedback[article.id]}
+                      onFeedback={handleFeedback}
                     />
                   ))}
                 </div>

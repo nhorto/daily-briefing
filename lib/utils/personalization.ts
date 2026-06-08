@@ -1,15 +1,50 @@
-import type { Article, ArticleCategory, UserPreferences } from '../types';
+import type { Article, ArticleCategory, FeedbackSignal, UserPreferences } from '../types';
+import { FEEDBACK_DELTAS, SCORE_WEIGHTS } from '../types';
+
+const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
 /**
- * Calculate a personalization score for an article based on user preferences.
- * Articles without a category get the 'other' weight.
+ * Calculate a personalization score (0-100) for an article, blending the user's
+ * category weight with the learned weight for the article's source.
+ * Unknown categories use the 'other' weight; unseen sources default to 50.
  */
 export function getPersonalizationScore(
   article: Article,
   preferences: UserPreferences
 ): number {
   const category = article.category || 'other';
-  return preferences.interests[category] ?? 50;
+  const categoryWeight = preferences.interests[category] ?? 50;
+  const sourceWeight = preferences.sources?.[article.sourceName] ?? 50;
+  return categoryWeight * SCORE_WEIGHTS.category + sourceWeight * SCORE_WEIGHTS.source;
+}
+
+/**
+ * Apply a training signal from one article to the preference model, returning a
+ * new UserPreferences. The article's category weight and source weight are both
+ * nudged by the signal's delta (clamped to 0-100). Pure — does not mutate input.
+ */
+export function applyFeedback(
+  preferences: UserPreferences,
+  article: Pick<Article, 'category' | 'sourceName'>,
+  signal: FeedbackSignal
+): UserPreferences {
+  const delta = FEEDBACK_DELTAS[signal];
+  const category = article.category || 'other';
+  const currentCategory = preferences.interests[category] ?? 50;
+  const currentSource = preferences.sources?.[article.sourceName] ?? 50;
+
+  return {
+    ...preferences,
+    interests: {
+      ...preferences.interests,
+      [category]: clamp(currentCategory + delta),
+    },
+    sources: {
+      ...preferences.sources,
+      [article.sourceName]: clamp(currentSource + delta),
+    },
+    updatedAt: preferences.updatedAt,
+  };
 }
 
 /**

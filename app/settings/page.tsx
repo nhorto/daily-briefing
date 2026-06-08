@@ -43,7 +43,7 @@ export default function SettingsPage() {
       const response = await fetch('/api/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interests: preferences.interests }),
+        body: JSON.stringify({ interests: preferences.interests, sources: preferences.sources }),
       });
 
       const data = await response.json();
@@ -54,6 +54,29 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error('Failed to save preferences:', error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleResetLearning() {
+    if (!preferences) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      const response = await fetch('/api/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interests: preferences.interests, sources: {} }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setPreferences(data.preferences);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    } catch (error) {
+      console.error('Failed to reset learning:', error);
     } finally {
       setSaving(false);
     }
@@ -88,7 +111,8 @@ export default function SettingsPage() {
           <div>
             <h1 className="text-xl font-bold text-text-primary">Settings</h1>
             <p className="text-sm text-text-secondary mt-1">
-              Adjust weights to personalize your briefing order. Higher values surface those topics first.
+              Set category weights here, or train your briefing directly with 👍 / 👎 / Not
+              interested on each article. Higher weights surface those topics first.
             </p>
           </div>
 
@@ -155,8 +179,55 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+          {/* Learned source preferences */}
+          <Card className="p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-base font-bold text-text-primary">
+                Learned Source Preferences
+              </h2>
+              {Object.keys(preferences?.sources ?? {}).length > 0 && (
+                <button
+                  onClick={handleResetLearning}
+                  disabled={saving}
+                  className="text-xs font-medium text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+                >
+                  Reset learning
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-text-secondary mb-5">
+              Tuned automatically from your feedback on articles.
+            </p>
+
+            {Object.keys(preferences?.sources ?? {}).length === 0 ? (
+              <p className="text-sm text-text-muted">
+                No learned preferences yet. Use 👍 / 👎 / Not interested on articles in your
+                briefing and your per-source tuning will appear here.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {Object.entries(preferences?.sources ?? {})
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([name, weight]) => (
+                    <div key={name} className="flex items-center gap-3">
+                      <span className="text-sm text-text-primary w-32 truncate" title={name}>
+                        {name}
+                      </span>
+                      <div className="flex-1 h-1.5 rounded-full bg-bg-elevated overflow-hidden">
+                        <div className="h-full bg-accent" style={{ width: `${weight}%` }} />
+                      </div>
+                      <span className="text-sm font-mono text-text-muted w-8 text-right">
+                        {weight}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </Card>
+
           <p className="text-xs text-text-muted text-center">
-            Preferences reorder your content — they never hide it. Lower-weight topics still appear, just further down.
+            Category and source weights reorder your content. “Not interested” also hides that
+            article from the current briefing — you can undo it inline.
           </p>
         </div>
       )}

@@ -11,7 +11,7 @@
 import { kv } from '@vercel/kv';
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import type { Briefing, DailyIntelligence, Source, UserPreferences } from './types';
+import type { Briefing, DailyIntelligence, FeedbackSignal, Source, UserPreferences } from './types';
 import { DEFAULT_PREFERENCES } from './types';
 
 // Check if KV is configured
@@ -113,6 +113,7 @@ const KEYS = {
   INTELLIGENCE_TODAY: 'intelligence:today',
   SOURCES_CONFIG: 'sources:config',
   READ_ARTICLES: 'read:articles',
+  ARTICLE_FEEDBACK: 'feedback:articles',
   PREFERENCES: 'user:preferences',
   briefingByDate: (date: string) => `briefing:${date}`,
 };
@@ -353,18 +354,62 @@ export async function getPreferences(): Promise<UserPreferences> {
     const data = await store.get<string>(KEYS.PREFERENCES);
     if (data) {
       const prefs = typeof data === 'string' ? JSON.parse(data) : data;
-      return prefs as UserPreferences;
+      return normalizePreferences(prefs);
     }
 
     // Try auto-seeding from config file
     const seeded = await seedFromConfigFile<UserPreferences>('preferences.json', KEYS.PREFERENCES);
-    if (seeded) return seeded;
+    if (seeded) return normalizePreferences(seeded);
 
     return { ...DEFAULT_PREFERENCES, updatedAt: new Date().toISOString() };
   } catch (error) {
     console.error('[KV] Error getting preferences:', error);
     return { ...DEFAULT_PREFERENCES, updatedAt: new Date().toISOString() };
   }
+}
+
+/**
+ * Ensure stored preferences have every field current code expects, so older
+ * saved data (e.g. without the `sources` map) keeps working.
+ */
+function normalizePreferences(prefs: Partial<UserPreferences>): UserPreferences {
+  return {
+    interests: { ...DEFAULT_PREFERENCES.interests, ...(prefs.interests ?? {}) },
+    sources: prefs.sources ?? {},
+    updatedAt: prefs.updatedAt ?? new Date().toISOString(),
+  };
+}
+
+/**
+ * Get the per-article feedback map (articleId → signal). Ephemeral (30-day TTL).
+ */
+export async function getArticleFeedback(): Promise<Record<string, FeedbackSignal>> {
+  try {
+    const data = await store.get<string>(KEYS.ARTICLE_FEEDBACK);
+    if (!data) return {};
+    return (typeof data === 'string' ? JSON.parse(data) : data) as Record<string, FeedbackSignal>;
+  } catch (error) {
+    console.error('[KV] Error getting article feedback:', error);
+    return {};
+  }
+}
+
+/**
+ * Record (or clear) the feedback signal for a single article.
+ * Passing `null` removes any existing signal for that article.
+ */
+export async function setArticleFeedback(
+  articleId: string,
+  signal: FeedbackSignal | null
+): Promise<Record<string, FeedbackSignal>> {
+  const map = await getArticleFeedback();
+  if (signal === null) {
+    delete map[articleId];
+  } else {
+    map[articleId] = signal;
+  }
+  await store.set(KEYS.ARTICLE_FEEDBACK, JSON.stringify(map), { ex: TTL.MONTH });
+  return map;
 }
 
 /**

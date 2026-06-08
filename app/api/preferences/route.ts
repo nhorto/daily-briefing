@@ -22,7 +22,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { interests } = body;
+    const { interests, sources } = body;
 
     if (!interests || typeof interests !== 'object') {
       return NextResponse.json(
@@ -42,8 +42,29 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // `sources` is optional. Validate when present; otherwise keep what's stored
+    // so saving the sliders never wipes the learned source weights.
+    if (sources !== undefined) {
+      if (typeof sources !== 'object' || sources === null) {
+        return NextResponse.json(
+          { success: false, error: 'sources must be an object when provided' },
+          { status: 400 }
+        );
+      }
+      for (const [name, weight] of Object.entries(sources)) {
+        if (typeof weight !== 'number' || weight < 0 || weight > 100) {
+          return NextResponse.json(
+            { success: false, error: `Invalid weight for source "${name}": must be 0-100` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    const existing = await getPreferences();
     const preferences: UserPreferences = {
       interests,
+      sources: sources ?? existing.sources,
       updatedAt: new Date().toISOString(),
     };
 

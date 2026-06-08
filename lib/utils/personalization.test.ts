@@ -2,6 +2,7 @@ import { test, expect, describe } from 'bun:test';
 import {
   getPersonalizationScore,
   sortByPreference,
+  applyFeedback,
   mapIntelligenceCategoryToSlug,
 } from './personalization';
 import { DEFAULT_PREFERENCES } from '../types';
@@ -33,25 +34,34 @@ const prefs: UserPreferences = {
     'design': 50,
     'other': 20,
   },
+  sources: {},
   updatedAt: '2026-06-08T00:00:00.000Z',
 };
 
 describe('getPersonalizationScore', () => {
-  test('returns the weight for the article category', () => {
-    expect(getPersonalizationScore(makeArticle({ category: 'ai-ml' }), prefs)).toBe(90);
+  test('blends category weight (0.6) with source weight (0.4)', () => {
+    // ai-ml=90, unseen source defaults to 50 → 90*0.6 + 50*0.4 = 74
+    expect(getPersonalizationScore(makeArticle({ category: 'ai-ml' }), prefs)).toBe(74);
+  });
+
+  test('factors in a learned source weight', () => {
+    const withSource: UserPreferences = { ...prefs, sources: { Source: 100 } };
+    // ai-ml=90, source=100 → 90*0.6 + 100*0.4 = 94
+    expect(getPersonalizationScore(makeArticle({ category: 'ai-ml' }), withSource)).toBe(94);
   });
 
   test('articles without a category use the "other" weight', () => {
-    expect(getPersonalizationScore(makeArticle({ category: undefined }), prefs)).toBe(20);
+    // other=20, source=50 → 20*0.6 + 50*0.4 = 32
+    expect(getPersonalizationScore(makeArticle({ category: undefined }), prefs)).toBe(32);
   });
 
-  test('defaults to 50 against default preferences', () => {
+  test('scores 50 against default preferences', () => {
     expect(getPersonalizationScore(makeArticle({ category: 'science' }), DEFAULT_PREFERENCES)).toBe(50);
   });
 });
 
 describe('sortByPreference', () => {
-  test('higher-weighted categories come first', () => {
+  test('higher-scoring articles come first', () => {
     const ai = makeArticle({ id: 'ai', category: 'ai-ml' });
     const biz = makeArticle({ id: 'biz', category: 'business' });
     const sorted = sortByPreference([biz, ai], prefs);
@@ -70,6 +80,42 @@ describe('sortByPreference', () => {
     const snapshot = input.map((a) => a.id);
     sortByPreference(input, prefs);
     expect(input.map((a) => a.id)).toEqual(snapshot);
+  });
+});
+
+describe('applyFeedback', () => {
+  const article = makeArticle({ category: 'science', sourceName: 'Source' });
+
+  test('"up" raises the category and source weights', () => {
+    const next = applyFeedback(prefs, article, 'up');
+    expect(next.interests['science']).toBe(58); // 50 + 8
+    expect(next.sources['Source']).toBe(58); // 50 + 8
+  });
+
+  test('"down" lowers the weights', () => {
+    const next = applyFeedback(prefs, article, 'down');
+    expect(next.interests['science']).toBe(42); // 50 - 8
+    expect(next.sources['Source']).toBe(42);
+  });
+
+  test('"hide" lowers more aggressively', () => {
+    const next = applyFeedback(prefs, article, 'hide');
+    expect(next.interests['science']).toBe(35); // 50 - 15
+    expect(next.sources['Source']).toBe(35);
+  });
+
+  test('clamps to 0-100', () => {
+    const high: UserPreferences = { ...prefs, interests: { ...prefs.interests, science: 98 }, sources: { Source: 2 } };
+    const up = applyFeedback(high, article, 'up');
+    expect(up.interests['science']).toBe(100); // clamped
+    const down = applyFeedback(high, article, 'down');
+    expect(down.sources['Source']).toBe(0); // clamped
+  });
+
+  test('does not mutate the input preferences', () => {
+    const before = JSON.stringify(prefs);
+    applyFeedback(prefs, article, 'up');
+    expect(JSON.stringify(prefs)).toBe(before);
   });
 });
 
