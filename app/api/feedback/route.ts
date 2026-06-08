@@ -4,6 +4,8 @@ import {
   setArticleFeedback,
   getPreferences,
   storePreferences,
+  getCachedEmbedding,
+  updateProfile,
 } from '@/lib/kv';
 import { applyFeedback } from '@/lib/utils/personalization';
 import type { ArticleCategory, FeedbackSignal } from '@/lib/types';
@@ -60,6 +62,12 @@ export async function POST(request: NextRequest) {
       preferences = applyFeedback(preferences, { category, sourceName }, signal);
       preferences.updatedAt = new Date().toISOString();
       await storePreferences(preferences);
+
+      // Fold this article's embedding into the semantic profile: 👍 pulls the
+      // profile toward it, 👎/hide pushes away. Best-effort — needs the article
+      // to have been embedded during aggregation.
+      const embedding = await getCachedEmbedding(articleId);
+      if (embedding) await updateProfile(embedding, signal === 'up' ? 1 : -1);
     }
 
     const feedback = await setArticleFeedback(articleId, isToggleOff ? null : signal);

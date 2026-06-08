@@ -28,15 +28,25 @@ function feedItemTitle(it: FeedItem): string {
   return it.kind === 'cluster' ? it.cluster.title : it.article.title;
 }
 
-/** Build the ranking signal for a feed item from its articles + preferences. */
-function feedItemSignal(it: FeedItem, prefs: UserPreferences): RankSignal {
+/** Build the ranking signal for a feed item from its articles + preferences.
+ *  `fitById` maps article id → semantic fit (cosine to the profile); empty until
+ *  the profile exists, in which case the item's fit stays undefined (cold start). */
+function feedItemSignal(
+  it: FeedItem,
+  prefs: UserPreferences,
+  fitById: Record<string, number>
+): RankSignal {
   const articles = feedItemArticles(it);
   const newest = Math.max(...articles.map((a) => new Date(a.publishedAt).getTime()));
+  const fits = articles
+    .map((a) => fitById[a.id])
+    .filter((x): x is number => typeof x === 'number');
   return {
     clusterSize: articles.length,
     sourceQuality: Math.max(...articles.map((a) => a.sourceAuthority ?? 50)),
     ageHours: (Date.now() - newest) / 3_600_000,
     affinity: Math.max(...articles.map((a) => getPersonalizationScore(a, prefs))),
+    fit: fits.length > 0 ? Math.max(...fits) : undefined,
   };
 }
 
@@ -54,6 +64,7 @@ export default function BriefingPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [fitScores, setFitScores] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const dateParam =
@@ -67,8 +78,19 @@ export default function BriefingPage() {
     fetchFeedback();
     fetchBookmarks();
     fetchDates();
+    fetchProfileFit();
     // Run once on mount; the fetch helpers are stable for this purpose.
   }, []);
+
+  async function fetchProfileFit() {
+    try {
+      const response = await fetch('/api/profile');
+      const data = await response.json();
+      if (data.success && data.ready) setFitScores(data.fit || {});
+    } catch (err) {
+      console.error('Failed to fetch profile fit:', err);
+    }
+  }
 
   async function fetchBookmarks() {
     try {
@@ -245,14 +267,15 @@ export default function BriefingPage() {
 
     if (sortMode === 'personalized' && preferences) {
       // Rank by importance (cluster size × source quality × freshness) blended
-      // with learned affinity, then MMR-diversify and slot in a little exploration.
-      const signals = items.map((it) => feedItemSignal(it, preferences));
+      // with learned affinity and semantic fit (embeddings), then MMR-diversify
+      // and slot in a little exploration.
+      const signals = items.map((it) => feedItemSignal(it, preferences, fitScores));
       const similarity = (i: number, j: number) =>
         calculateTokenSimilarity(feedItemTitle(items[i]!), feedItemTitle(items[j]!));
       return rankIndices(signals, similarity).map((i) => items[i]!);
     }
     return [...items].sort((a, b) => itemTime(b) - itemTime(a));
-  }, [briefing, selectedSources, selectedCategories, sortMode, preferences, searchQuery]);
+  }, [briefing, selectedSources, selectedCategories, sortMode, preferences, searchQuery, fitScores]);
 
   // Get unique categories with counts for filter pills
   const categoryCounts = useMemo(() => {

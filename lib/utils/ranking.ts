@@ -27,6 +27,16 @@ export interface RankSignal {
   ageHours: number;
   /** Learned/manual preference for this item (category+source blend), 0-100. */
   affinity: number;
+  /** Semantic "fit": cosine of the item's embedding to the profile vector,
+   *  ~[-1, 1]. Undefined until the profile exists (cold start). */
+  fit?: number;
+}
+
+/** Weights for blending the score terms. */
+export interface RankWeights {
+  importance?: number;
+  affinity?: number;
+  fit?: number;
 }
 
 /** Tunable ranking parameters. */
@@ -34,10 +44,13 @@ export const RANK_DEFAULTS = {
   /** Time-decay exponent. Softened vs Hacker News' 1.8 so a great piece from
    *  yesterday can still appear in a once-daily briefing. */
   gravity: 1.2,
-  /** w_imp — weight on importance (no embeddings yet; Phase 2 adds a fit term). */
+  /** Two-way weights when there's no profile yet (cold start). */
   weightImportance: 0.4,
-  /** w_aff — weight on personal affinity. */
   weightAffinity: 0.6,
+  /** Three-way weights once embeddings give a semantic "fit" term. */
+  weightImportanceFit: 0.35,
+  weightAffinityFit: 0.2,
+  weightFit: 0.45,
   /** MMR relevance-vs-diversity knob (1 = pure relevance, 0 = pure diversity). */
   mmrLambda: 0.7,
   /** Off-profile-but-important items promoted into the top region. */
@@ -87,20 +100,28 @@ export function minMaxNormalize(values: number[]): number[] {
 }
 
 /**
- * Blend normalized importance + normalized affinity into a [0, 1] score per item.
- * Both terms are normalized across the supplied batch so neither dominates by
- * scale. (Phase 2 will fold an embedding "fit" term in here.)
+ * Blend normalized importance + affinity (+ semantic fit, when available) into a
+ * [0, 1] score per item. Each term is normalized across the supplied batch so
+ * none dominates by scale. If no signal carries a `fit` value (cold start), this
+ * behaves exactly as the two-term importance/affinity blend.
  */
 export function blendScores(
   signals: RankSignal[],
-  weights: { importance?: number; affinity?: number } = {},
+  weights: RankWeights = {},
   gravity: number = RANK_DEFAULTS.gravity
 ): number[] {
-  const wImp = weights.importance ?? RANK_DEFAULTS.weightImportance;
-  const wAff = weights.affinity ?? RANK_DEFAULTS.weightAffinity;
+  const hasFit = signals.some((s) => typeof s.fit === 'number');
+  const wImp = weights.importance ?? (hasFit ? RANK_DEFAULTS.weightImportanceFit : RANK_DEFAULTS.weightImportance);
+  const wAff = weights.affinity ?? (hasFit ? RANK_DEFAULTS.weightAffinityFit : RANK_DEFAULTS.weightAffinity);
+  const wFit = weights.fit ?? (hasFit ? RANK_DEFAULTS.weightFit : 0);
+
   const impN = minMaxNormalize(signals.map((s) => importanceScore(s, gravity)));
   const affN = minMaxNormalize(signals.map((s) => s.affinity));
-  return signals.map((_, i) => wImp * (impN[i] ?? 0) + wAff * (affN[i] ?? 0));
+  const fitN = hasFit ? minMaxNormalize(signals.map((s) => s.fit ?? 0)) : [];
+
+  return signals.map(
+    (_, i) => wImp * (impN[i] ?? 0) + wAff * (affN[i] ?? 0) + wFit * (fitN[i] ?? 0)
+  );
 }
 
 /**
@@ -193,7 +214,7 @@ export function rankIndices(
   signals: RankSignal[],
   similarity: (i: number, j: number) => number,
   opts: {
-    weights?: { importance?: number; affinity?: number };
+    weights?: RankWeights;
     gravity?: number;
     mmrLambda?: number;
     explorationSlots?: number;

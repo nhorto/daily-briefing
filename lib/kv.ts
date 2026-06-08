@@ -16,11 +16,13 @@ import type {
   Briefing,
   DailyIntelligence,
   FeedbackSignal,
+  ProfileState,
   SavedArticle,
   Source,
   UserPreferences,
 } from './types';
-import { DEFAULT_PREFERENCES } from './types';
+import { DEFAULT_PREFERENCES, PROFILE_DISLIKE_WEIGHT } from './types';
+import { addVectors, normalizeVector, scaleVector, subtractVectors } from './utils/vector';
 
 // Check if KV is configured
 const hasKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
@@ -140,8 +142,10 @@ const KEYS = {
   BRIEFING_DATES: 'briefing:dates',
   SEEN_URLS: 'seen:urls',
   BOOKMARKS: 'bookmarks',
+  PROFILE: 'user:profile',
   briefingByDate: (date: string) => `briefing:${date}`,
   articleContent: (url: string) => `content:${url}`,
+  embeddingById: (id: string) => `emb:${id}`,
 };
 
 /** Max number of seen article URLs to retain (most-recent-first). */
@@ -560,6 +564,102 @@ export async function removeBookmark(url: string): Promise<SavedArticle[]> {
   const updated = list.filter((b) => b.url !== url);
   await store.set(KEYS.BOOKMARKS, JSON.stringify(updated));
   return updated;
+}
+
+/**
+ * Get a cached article embedding by article id (30-day TTL). Embeddings are
+ * deterministic per (text, model, dimensions), so a retained article is only
+ * embedded once; this cache is also how feedback/profile code looks up the
+ * vector for an article after the briefing it came from has rolled over.
+ */
+export async function getCachedEmbedding(articleId: string): Promise<number[] | null> {
+  try {
+    const data = await store.get<string>(KEYS.embeddingById(articleId));
+    if (!data) return null;
+    return (typeof data === 'string' ? JSON.parse(data) : data) as number[];
+  } catch (error) {
+    console.error('[KV] Error getting cached embedding:', error);
+    return null;
+  }
+}
+
+/** Cache an article's embedding by id (30-day TTL). */
+export async function setCachedEmbedding(articleId: string, embedding: number[]): Promise<void> {
+  try {
+    await store.set(KEYS.embeddingById(articleId), JSON.stringify(embedding), { ex: TTL.MONTH });
+  } catch (error) {
+    console.error('[KV] Error caching embedding:', error);
+  }
+}
+
+/** Cache many embeddings at once (best-effort). */
+export async function setCachedEmbeddings(entries: Array<[string, number[]]>): Promise<void> {
+  await Promise.all(entries.map(([id, vec]) => setCachedEmbedding(id, vec)));
+}
+
+/**
+ * The user's interest profile, accumulated incrementally from feedback so it
+ * survives briefing regenerations (article ids change each run, so we fold a
+ * vector in at feedback time rather than re-deriving from ids later). Stores
+ * running sums of liked ("pos") and disliked ("neg") embeddings.
+ */
+export async function getProfileState(): Promise<ProfileState | null> {
+  try {
+    const data = await store.get<string>(KEYS.PROFILE);
+    if (!data) return null;
+    return (typeof data === 'string' ? JSON.parse(data) : data) as ProfileState;
+  } catch (error) {
+    console.error('[KV] Error getting profile state:', error);
+    return null;
+  }
+}
+
+/**
+ * Fold one embedding into the profile. `polarity` > 0 for liked/saved, < 0 for
+ * disliked/hidden. If the embedding dimension changes (model/dims swap), the
+ * profile resets rather than mixing incompatible vectors.
+ */
+export async function updateProfile(embedding: number[], polarity: number): Promise<void> {
+  if (embedding.length === 0) return;
+  try {
+    let state = await getProfileState();
+    const dim = embedding.length;
+    if (!state || state.dim !== dim) {
+      state = {
+        posSum: new Array<number>(dim).fill(0),
+        posCount: 0,
+        negSum: new Array<number>(dim).fill(0),
+        negCount: 0,
+        dim,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    if (polarity >= 0) {
+      state.posSum = addVectors(state.posSum, embedding);
+      state.posCount += 1;
+    } else {
+      state.negSum = addVectors(state.negSum, embedding);
+      state.negCount += 1;
+    }
+    state.updatedAt = new Date().toISOString();
+    await store.set(KEYS.PROFILE, JSON.stringify(state));
+  } catch (error) {
+    console.error('[KV] Error updating profile:', error);
+  }
+}
+
+/**
+ * The current profile vector = normalize(mean(liked) − λ·mean(disliked)).
+ * Returns null until there's at least one positive signal (cold start), so the
+ * ranker can fall back to importance + affinity.
+ */
+export async function getProfileVector(): Promise<number[] | null> {
+  const state = await getProfileState();
+  if (!state || state.posCount === 0) return null;
+  const meanPos = scaleVector(state.posSum, 1 / state.posCount);
+  if (state.negCount === 0) return normalizeVector(meanPos);
+  const meanNeg = scaleVector(state.negSum, 1 / state.negCount);
+  return normalizeVector(subtractVectors(meanPos, scaleVector(meanNeg, PROFILE_DISLIKE_WEIGHT)));
 }
 
 /**
