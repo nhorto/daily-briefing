@@ -6,6 +6,7 @@ import { formatRelativeTime, getFreshnessCategory } from '@/lib/utils/date';
 import Card from '@/components/ui/Card';
 import { getSourceColor } from '@/components/ui/SourcePill';
 import FeedbackControls from '@/components/ui/FeedbackControls';
+import BookmarkButton from '@/components/ui/BookmarkButton';
 
 interface ArticleCardProps {
   article: Article;
@@ -16,6 +17,10 @@ interface ArticleCardProps {
   feedback?: FeedbackSignal;
   /** Called when the user trains the model from this article. */
   onFeedback?: (article: Article, signal: FeedbackSignal) => void;
+  /** Whether this article is bookmarked. */
+  isBookmarked?: boolean;
+  /** Called when the user toggles the bookmark. */
+  onToggleBookmark?: (article: Article) => void;
 }
 
 export default function ArticleCard({
@@ -25,6 +30,8 @@ export default function ArticleCard({
   onMarkRead,
   feedback,
   onFeedback,
+  isBookmarked,
+  onToggleBookmark,
 }: ArticleCardProps) {
   const freshness = getFreshnessCategory(article.publishedAt);
   const sourceColor = getSourceColor(article.sourceName);
@@ -117,10 +124,15 @@ export default function ArticleCard({
           </a>
         </div>
 
-        {/* Training controls */}
-        {onFeedback && (
-          <FeedbackControls value={feedback} onChange={(s) => onFeedback(article, s)} />
-        )}
+        {/* Save + training controls */}
+        <div className="flex items-center gap-1">
+          {onToggleBookmark && (
+            <BookmarkButton saved={!!isBookmarked} onClick={() => onToggleBookmark(article)} />
+          )}
+          {onFeedback && (
+            <FeedbackControls value={feedback} onChange={(s) => onFeedback(article, s)} />
+          )}
+        </div>
       </div>
         </div>
 

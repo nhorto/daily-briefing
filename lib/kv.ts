@@ -11,7 +11,15 @@
 import { kv } from '@vercel/kv';
 import { join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import type { Briefing, DailyIntelligence, FeedbackSignal, Source, UserPreferences } from './types';
+import type {
+  Article,
+  Briefing,
+  DailyIntelligence,
+  FeedbackSignal,
+  SavedArticle,
+  Source,
+  UserPreferences,
+} from './types';
 import { DEFAULT_PREFERENCES } from './types';
 
 // Check if KV is configured
@@ -131,6 +139,7 @@ const KEYS = {
   PREFERENCES: 'user:preferences',
   BRIEFING_DATES: 'briefing:dates',
   SEEN_URLS: 'seen:urls',
+  BOOKMARKS: 'bookmarks',
   briefingByDate: (date: string) => `briefing:${date}`,
   articleContent: (url: string) => `content:${url}`,
 };
@@ -517,6 +526,40 @@ export async function markUrlsSeen(urls: string[]): Promise<void> {
   } catch (error) {
     console.error('[KV] Error marking URLs seen:', error);
   }
+}
+
+/**
+ * Get saved/bookmarked articles, newest first. Persistent (no TTL).
+ */
+export async function getBookmarks(): Promise<SavedArticle[]> {
+  try {
+    const data = await store.get<string>(KEYS.BOOKMARKS);
+    if (!data) return [];
+    return (typeof data === 'string' ? JSON.parse(data) : data) as SavedArticle[];
+  } catch (error) {
+    console.error('[KV] Error getting bookmarks:', error);
+    return [];
+  }
+}
+
+/**
+ * Bookmark an article (stores a full snapshot). Idempotent by URL — saving an
+ * already-saved article is a no-op. Returns the updated list.
+ */
+export async function addBookmark(article: Article): Promise<SavedArticle[]> {
+  const list = await getBookmarks();
+  if (list.some((b) => b.url === article.url)) return list;
+  const updated = [{ ...article, savedAt: new Date().toISOString() }, ...list];
+  await store.set(KEYS.BOOKMARKS, JSON.stringify(updated));
+  return updated;
+}
+
+/** Remove a bookmark by article URL. Returns the updated list. */
+export async function removeBookmark(url: string): Promise<SavedArticle[]> {
+  const list = await getBookmarks();
+  const updated = list.filter((b) => b.url !== url);
+  await store.set(KEYS.BOOKMARKS, JSON.stringify(updated));
+  return updated;
 }
 
 /**

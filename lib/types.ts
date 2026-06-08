@@ -64,6 +64,14 @@ export interface Article {
 }
 
 /**
+ * A bookmarked article. We store a full snapshot (not just an ID) so saved
+ * articles survive briefing rollover — the original briefing it came from expires.
+ */
+export interface SavedArticle extends Article {
+  savedAt: string; // ISO timestamp when the article was bookmarked
+}
+
+/**
  * Topic Cluster (group of similar articles)
  */
 export interface Cluster {

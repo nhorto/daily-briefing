@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/briefing', label: 'Briefing' },
+  { href: '/saved', label: 'Saved' },
   { href: '/sources', label: 'Sources' },
 ];
 
