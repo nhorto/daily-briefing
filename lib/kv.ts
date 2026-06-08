@@ -115,6 +115,7 @@ const KEYS = {
   READ_ARTICLES: 'read:articles',
   ARTICLE_FEEDBACK: 'feedback:articles',
   PREFERENCES: 'user:preferences',
+  BRIEFING_DATES: 'briefing:dates',
   briefingByDate: (date: string) => `briefing:${date}`,
 };
 
@@ -140,6 +141,15 @@ export async function storeBriefing(briefing: Briefing): Promise<void> {
     await store.set(dateKey, JSON.stringify(briefing), {
       ex: TTL.WEEK,
     });
+
+    // Maintain a recent-dates index so the UI can offer history browsing.
+    const dates = await getBriefingDates();
+    if (!dates.includes(briefing.date)) {
+      const updated = [briefing.date, ...dates]
+        .sort((a, b) => b.localeCompare(a))
+        .slice(0, 30);
+      await store.set(KEYS.BRIEFING_DATES, JSON.stringify(updated), { ex: TTL.MONTH });
+    }
 
     console.log(`[KV] Stored briefing for ${briefing.date}`);
   } catch (error) {
@@ -177,6 +187,20 @@ export async function getBriefingByDate(date: string): Promise<Briefing | null> 
   } catch (error) {
     console.error(`[KV] Error getting briefing for ${date}:`, error);
     return null;
+  }
+}
+
+/**
+ * List the dates (YYYY-MM-DD) for which a briefing is available, newest first.
+ */
+export async function getBriefingDates(): Promise<string[]> {
+  try {
+    const data = await store.get<string>(KEYS.BRIEFING_DATES);
+    if (!data) return [];
+    return (typeof data === 'string' ? JSON.parse(data) : data) as string[];
+  } catch (error) {
+    console.error('[KV] Error getting briefing dates:', error);
+    return [];
   }
 }
 

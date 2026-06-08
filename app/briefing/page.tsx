@@ -10,6 +10,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 import { sortByPreference, getPersonalizationScore } from '@/lib/utils/personalization';
+import { getTodayDateString } from '@/lib/utils/date';
 
 /** A row in the feed: either a multi-source topic cluster or a single article. */
 type FeedItem = { kind: 'cluster'; cluster: Cluster } | { kind: 'article'; article: Article };
@@ -24,13 +25,32 @@ export default function BriefingPage() {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [feedback, setFeedback] = useState<Record<string, FeedbackSignal>>({});
   const [sortMode, setSortMode] = useState<'time' | 'personalized'>('time');
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    fetchBriefing();
+    const dateParam =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('date')
+        : null;
+    setSelectedDate(dateParam);
+    fetchBriefing(dateParam);
     fetchReadIds();
     fetchPreferences();
     fetchFeedback();
+    fetchDates();
   }, []);
+
+  async function fetchDates() {
+    try {
+      const response = await fetch('/api/briefing/dates');
+      const data = await response.json();
+      if (data.success) setAvailableDates(data.dates || []);
+    } catch (err) {
+      console.error('Failed to fetch briefing dates:', err);
+    }
+  }
 
   async function fetchFeedback() {
     try {
@@ -56,10 +76,10 @@ export default function BriefingPage() {
     }
   }
 
-  async function fetchBriefing() {
+  async function fetchBriefing(date?: string | null) {
     try {
       setLoading(true);
-      const response = await fetch('/api/briefing');
+      const response = await fetch(date ? `/api/briefing?date=${date}` : '/api/briefing');
       const data = await response.json();
 
       if (!response.ok || !data.success) {
@@ -105,6 +125,14 @@ export default function BriefingPage() {
     }
   }
 
+  function handleSelectDate(date: string | null) {
+    setSelectedDate(date);
+    if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', date ? `/briefing?date=${date}` : '/briefing');
+    }
+    fetchBriefing(date);
+  }
+
   // Flatten all articles from clusters + individual, sorted by time descending
   const allArticles: Article[] = useMemo(() => {
     if (!briefing) return [];
@@ -141,14 +169,25 @@ export default function BriefingPage() {
   const feedItems: FeedItem[] = useMemo(() => {
     if (!briefing) return [];
 
-    const matches = (a: Article) =>
+    const q = searchQuery.trim().toLowerCase();
+    const passesFilters = (a: Article) =>
       (selectedSources.size === 0 || selectedSources.has(a.sourceName)) &&
       (selectedCategories.size === 0 || selectedCategories.has(a.category || 'other'));
+    const matchesSearch = (a: Article) =>
+      !q ||
+      a.title.toLowerCase().includes(q) ||
+      (a.summary || '').toLowerCase().includes(q) ||
+      a.excerpt.toLowerCase().includes(q) ||
+      a.sourceName.toLowerCase().includes(q);
+    const matches = (a: Article) => passesFilters(a) && matchesSearch(a);
 
     const items: FeedItem[] = [];
-    // A cluster appears if any of its articles passes the active filters.
+    // A cluster appears if any article passes the filters and (search) the cluster
+    // title or one of its articles matches the query.
     for (const cluster of briefing.clusters) {
-      if (cluster.articles.some(matches)) items.push({ kind: 'cluster', cluster });
+      const passes = cluster.articles.some(passesFilters);
+      const searched = !q || cluster.title.toLowerCase().includes(q) || cluster.articles.some(matchesSearch);
+      if (passes && searched) items.push({ kind: 'cluster', cluster });
     }
     for (const article of briefing.individualArticles) {
       if (matches(article)) items.push({ kind: 'article', article });
@@ -174,7 +213,7 @@ export default function BriefingPage() {
       });
     }
     return [...items].sort((a, b) => itemTime(b) - itemTime(a));
-  }, [briefing, selectedSources, selectedCategories, sortMode, preferences]);
+  }, [briefing, selectedSources, selectedCategories, sortMode, preferences, searchQuery]);
 
   // Get unique categories with counts for filter pills
   const categoryCounts = useMemo(() => {
@@ -326,25 +365,45 @@ export default function BriefingPage() {
           <div className="flex-1 overflow-y-auto min-w-0">
             <div className="px-4 sm:px-6 py-6">
               {/* Header */}
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4 gap-3">
                 <div>
                   <h1 className="text-xl font-bold text-text-primary">
-                    Today's Briefing
+                    {selectedDate ? 'Briefing' : "Today's Briefing"}
                   </h1>
                   <p className="text-text-muted text-sm mt-0.5">
-                    {new Date(briefing.date).toLocaleDateString('en-US', {
+                    {new Date(briefing.date + 'T00:00:00').toLocaleDateString('en-US', {
                       weekday: 'long',
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
                     })}
-                    {unreadCount > 0 && (
+                    {!selectedDate && unreadCount > 0 && (
                       <span className="ml-2 text-status-new">{unreadCount} new</span>
                     )}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  {unreadCount > 0 && (
+                <div className="flex items-center gap-2">
+                  {availableDates.filter((d) => d !== getTodayDateString()).length > 0 && (
+                    <select
+                      value={selectedDate ?? ''}
+                      onChange={(e) => handleSelectDate(e.target.value || null)}
+                      title="View a past briefing"
+                      className="px-2.5 py-1.5 bg-bg-elevated text-text-secondary rounded-lg border border-border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
+                      <option value="">Today</option>
+                      {availableDates
+                        .filter((d) => d !== getTodayDateString())
+                        .map((d) => (
+                          <option key={d} value={d}>
+                            {new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  {!selectedDate && unreadCount > 0 && (
                     <button
                       onClick={handleMarkAllRead}
                       className="px-3 py-1.5 bg-bg-elevated text-text-secondary rounded-lg hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
@@ -352,13 +411,39 @@ export default function BriefingPage() {
                       Mark All Read
                     </button>
                   )}
+                  {!selectedDate && (
+                    <button
+                      onClick={regenerateBriefing}
+                      className="px-3 py-1.5 bg-bg-elevated text-text-secondary rounded-lg hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
+                    >
+                      Regenerate
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Past-briefing banner */}
+              {selectedDate && (
+                <div className="mb-4 flex items-center justify-between rounded-lg bg-bg-surface border border-border px-4 py-2 text-sm">
+                  <span className="text-text-secondary">You're viewing a past briefing.</span>
                   <button
-                    onClick={regenerateBriefing}
-                    className="px-3 py-1.5 bg-bg-elevated text-text-secondary rounded-lg hover:bg-bg-overlay hover:text-text-primary transition-colors text-sm font-medium"
+                    onClick={() => handleSelectDate(null)}
+                    className="text-accent hover:text-accent-hover transition-colors font-medium"
                   >
-                    Regenerate
+                    Back to today
                   </button>
                 </div>
+              )}
+
+              {/* Search */}
+              <div className="mb-4">
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search this briefing…"
+                  className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+                />
               </div>
 
               {/* Sort toggle + Category filter pills */}
@@ -450,13 +535,16 @@ export default function BriefingPage() {
               ) : (
                 <div className="text-center py-12">
                   <p className="text-text-secondary">
-                    {selectedSources.size > 0 || selectedCategories.size > 0
-                      ? 'No articles match the selected filters.'
+                    {selectedSources.size > 0 || selectedCategories.size > 0 || searchQuery
+                      ? 'No articles match your search or filters.'
                       : 'No content found for today. Check back later!'}
                   </p>
-                  {(selectedSources.size > 0 || selectedCategories.size > 0) && (
+                  {(selectedSources.size > 0 || selectedCategories.size > 0 || searchQuery) && (
                     <button
-                      onClick={handleClearFilters}
+                      onClick={() => {
+                        handleClearFilters();
+                        setSearchQuery('');
+                      }}
                       className="mt-3 text-accent hover:text-accent-hover transition-colors text-sm font-medium"
                     >
                       Clear filters
