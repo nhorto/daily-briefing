@@ -419,6 +419,7 @@ function normalizePreferences(prefs: Partial<UserPreferences>): UserPreferences 
   return {
     interests: { ...DEFAULT_PREFERENCES.interests, ...(prefs.interests ?? {}) },
     sources: prefs.sources ?? {},
+    mutedKeywords: prefs.mutedKeywords ?? [],
     updatedAt: prefs.updatedAt ?? new Date().toISOString(),
   };
 }

@@ -9,7 +9,7 @@ import ChatPanel from '@/components/ChatPanel';
 import DashboardLayout from '@/components/DashboardLayout';
 import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import { SkeletonPage } from '@/components/ui/Skeleton';
-import { sortByPreference, getPersonalizationScore } from '@/lib/utils/personalization';
+import { sortByPreference, getPersonalizationScore, isMuted } from '@/lib/utils/personalization';
 import { getTodayDateString } from '@/lib/utils/date';
 import { regenerateBriefingAction } from './actions';
 
@@ -151,6 +151,11 @@ export default function BriefingPage() {
   const filteredArticles = useMemo(() => {
     let articles = allArticles;
 
+    const muted = preferences?.mutedKeywords;
+    if (muted && muted.length > 0) {
+      articles = articles.filter((a) => !isMuted(a, muted));
+    }
+
     if (selectedSources.size > 0) {
       articles = articles.filter((a) => selectedSources.has(a.sourceName));
     }
@@ -172,7 +177,9 @@ export default function BriefingPage() {
     if (!briefing) return [];
 
     const q = searchQuery.trim().toLowerCase();
+    const muted = preferences?.mutedKeywords ?? [];
     const passesFilters = (a: Article) =>
+      !isMuted(a, muted) &&
       (selectedSources.size === 0 || selectedSources.has(a.sourceName)) &&
       (selectedCategories.size === 0 || selectedCategories.has(a.category || 'other'));
     const matchesSearch = (a: Article) =>

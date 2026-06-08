@@ -133,6 +133,7 @@ export type FeedbackSignal = 'up' | 'down' | 'hide';
 export interface UserPreferences {
   interests: Record<ArticleCategory, number>; // category → weight (0-100)
   sources: Record<string, number>; // sourceName → learned weight (0-100)
+  mutedKeywords: string[]; // articles whose title/excerpt match are filtered out
   updatedAt: string; // ISO timestamp
 }
 
@@ -148,6 +149,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     'other': 50,
   },
   sources: {},
+  mutedKeywords: [],
   updatedAt: new Date().toISOString(),
 };
 

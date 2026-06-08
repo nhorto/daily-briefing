@@ -22,7 +22,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { interests, sources } = body;
+    const { interests, sources, mutedKeywords } = body;
 
     if (!interests || typeof interests !== 'object') {
       return NextResponse.json(
@@ -61,10 +61,28 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // `mutedKeywords` is optional. Validate when present; otherwise keep stored.
+    let cleanedMuted: string[] | undefined;
+    if (mutedKeywords !== undefined) {
+      if (!Array.isArray(mutedKeywords) || mutedKeywords.some((k) => typeof k !== 'string')) {
+        return NextResponse.json(
+          { success: false, error: 'mutedKeywords must be an array of strings when provided' },
+          { status: 400 }
+        );
+      }
+      // Normalize: trim, drop blanks, lowercase, dedupe.
+      cleanedMuted = [
+        ...new Set(
+          (mutedKeywords as string[]).map((k) => k.trim().toLowerCase()).filter(Boolean)
+        ),
+      ];
+    }
+
     const existing = await getPreferences();
     const preferences: UserPreferences = {
       interests,
       sources: sources ?? existing.sources,
+      mutedKeywords: cleanedMuted ?? existing.mutedKeywords,
       updatedAt: new Date().toISOString(),
     };
 
