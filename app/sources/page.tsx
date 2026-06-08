@@ -23,7 +23,7 @@ export default function SourcesPage() {
   useEffect(() => {
     fetchSources();
     fetchBriefingStats();
-  }, [fetchSources, fetchBriefingStats]);
+  }, []);
 
   async function fetchSources() {
     try {
@@ -131,6 +131,13 @@ export default function SourcesPage() {
     }
   }
 
+  // Map source-id → fetch error from the latest briefing, for health display.
+  const errorMap = new Map<string, string>();
+  briefing?.errors?.forEach((e) => {
+    errorMap.set(e.sourceId, e.error);
+  });
+  const sourcesWithErrors = sources.filter((s) => errorMap.has(s.id)).length;
+
   return (
     <DashboardLayout>
       {loading ? (
@@ -164,6 +171,17 @@ export default function SourcesPage() {
                 totalClusters={briefing.totalClusters}
                 generatedAt={briefing.generatedAt}
               />
+            </div>
+          )}
+
+          {/* Source health summary */}
+          {briefing && sourcesWithErrors > 0 && (
+            <div className="mb-6 flex items-center gap-2 rounded-lg border border-status-breaking/30 bg-status-breaking/10 px-4 py-2.5 text-sm text-status-breaking">
+              <span aria-hidden="true">⚠</span>
+              <span>
+                {sourcesWithErrors} source{sourcesWithErrors === 1 ? '' : 's'} failed to fetch in
+                the latest briefing — see details below.
+              </span>
             </div>
           )}
 
@@ -285,6 +303,11 @@ export default function SourcesPage() {
                         <Badge variant="accent">
                           {source.type.toUpperCase()}
                         </Badge>
+                        {errorMap.has(source.id) && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-status-breaking/15 text-status-breaking">
+                            Fetch error
+                          </span>
+                        )}
                       </div>
 
                       <a
@@ -307,6 +330,12 @@ export default function SourcesPage() {
                           </>
                         )}
                       </div>
+
+                      {errorMap.has(source.id) && (
+                        <p className="mt-2 text-xs text-status-breaking">
+                          ⚠ {errorMap.get(source.id)}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex gap-2 ml-4">
