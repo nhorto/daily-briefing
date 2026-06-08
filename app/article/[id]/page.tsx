@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import type { Article } from '@/lib/types';
+import type { Article, FeedbackSignal } from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
 import ChatPanel from '@/components/ChatPanel';
 import ArticleCard from '@/components/ArticleCard';
+import FeedbackControls from '@/components/ui/FeedbackControls';
 import { getSourceColor } from '@/components/ui/SourcePill';
 import { formatRelativeTime, getFreshnessCategory } from '@/lib/utils/date';
 import { SkeletonPage } from '@/components/ui/Skeleton';
@@ -19,6 +20,7 @@ export default function ArticleDetailPage() {
   const [relatedArticles, setRelatedArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackSignal, setFeedbackSignal] = useState<FeedbackSignal | undefined>(undefined);
 
   useEffect(() => {
     async function fetchArticle() {
@@ -35,6 +37,15 @@ export default function ArticleDetailPage() {
         setRelatedArticles(data.relatedArticles || []);
         setError(null);
 
+        // Load any existing training signal for this article
+        try {
+          const fbRes = await fetch('/api/feedback');
+          const fbData = await fbRes.json();
+          if (fbData.success) setFeedbackSignal(fbData.feedback?.[id]);
+        } catch {
+          // non-critical
+        }
+
         // Auto-mark as read
         await fetch('/api/articles/read', {
           method: 'POST',
@@ -50,6 +61,26 @@ export default function ArticleDetailPage() {
 
     fetchArticle();
   }, [id]);
+
+  async function handleFeedback(signal: FeedbackSignal) {
+    if (!article) return;
+    const isToggleOff = feedbackSignal === signal;
+    setFeedbackSignal(isToggleOff ? undefined : signal);
+    try {
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          articleId: article.id,
+          signal,
+          category: article.category,
+          sourceName: article.sourceName,
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to record feedback:', err);
+    }
+  }
 
   if (loading) {
     return (
@@ -133,6 +164,18 @@ export default function ArticleDetailPage() {
             {article.title}
           </h1>
 
+          {/* Hero image */}
+          {article.imageUrl && (
+            <img
+              src={article.imageUrl}
+              alt=""
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+              className="w-full max-h-80 object-cover rounded-lg mb-6 bg-bg-elevated"
+            />
+          )}
+
           {/* AI Summary */}
           {article.summary && (
             <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
@@ -157,18 +200,24 @@ export default function ArticleDetailPage() {
             </div>
           )}
 
-          {/* Read Original */}
-          <a
-            href={article.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-bg-primary rounded-lg hover:bg-accent-hover transition-colors font-medium"
-          >
-            Read Original
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
+          {/* Read Original + training */}
+          <div className="flex flex-wrap items-center gap-4">
+            <a
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-bg-primary rounded-lg hover:bg-accent-hover transition-colors font-medium"
+            >
+              Read Original
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Train your briefing:</span>
+              <FeedbackControls value={feedbackSignal} onChange={handleFeedback} />
+            </div>
+          </div>
 
           {/* Related Articles */}
           {relatedArticles.length > 0 && (
