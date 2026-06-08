@@ -26,6 +26,7 @@ export default function ChatPanel({
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isEmbedded = mode === 'global' || mode === 'article';
   const isModal = !isEmbedded;
@@ -50,11 +51,23 @@ export default function ChatPanel({
   // For modal mode, don't render if not open
   if (isModal && !isOpen) return null;
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function submit() {
     if (!input.trim() || isLoading) return;
     sendMessage({ parts: [{ type: 'text', text: input }] });
     setInput('');
+    // Reset the textarea back to a single row after sending.
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    submit();
+  }
+
+  // Grow the textarea with its content, up to a max height (then it scrolls).
+  function autoGrow(el: HTMLTextAreaElement) {
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }
 
   const headerText = mode === 'article'
@@ -106,7 +119,7 @@ export default function ChatPanel({
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words ${
                 message.role === 'user'
                   ? 'bg-accent text-bg-primary'
                   : 'bg-bg-elevated text-text-primary'
@@ -136,18 +149,29 @@ export default function ChatPanel({
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="border-t border-border px-4 py-3 flex-shrink-0">
-        <div className="flex gap-2">
-          <input
-            type="text"
+        <div className="flex gap-2 items-end">
+          <textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              autoGrow(e.target);
+            }}
+            onKeyDown={(e) => {
+              // Enter sends; Shift+Enter inserts a newline.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            rows={1}
             placeholder="Ask a question..."
-            className="flex-1 px-3 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent text-text-primary placeholder-text-muted text-sm"
+            className="flex-1 resize-none max-h-40 overflow-y-auto px-3 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent text-text-primary placeholder-text-muted text-sm leading-relaxed"
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-4 py-2 bg-accent text-bg-primary rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+            className="px-4 py-2 bg-accent text-bg-primary rounded-lg hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium shrink-0"
           >
             Send
           </button>
