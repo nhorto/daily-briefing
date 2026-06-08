@@ -11,6 +11,7 @@ import SourceFilterSidebar from '@/components/SourceFilterSidebar';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 import { sortByPreference, getPersonalizationScore } from '@/lib/utils/personalization';
 import { getTodayDateString } from '@/lib/utils/date';
+import { regenerateBriefingAction } from './actions';
 
 /** A row in the feed: either a multi-source topic cluster or a single article. */
 type FeedItem = { kind: 'cluster'; cluster: Cluster } | { kind: 'article'; article: Article };
@@ -111,14 +112,14 @@ export default function BriefingPage() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/cron/aggregate', { method: 'POST' });
-      const data = await response.json();
+      const result = await regenerateBriefingAction();
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to generate briefing');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate briefing');
       }
 
-      await fetchBriefing();
+      // A fresh briefing is always "today"; reset any history view.
+      handleSelectDate(null);
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);
