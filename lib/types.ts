@@ -61,6 +61,18 @@ export interface Article {
   summary?: string; // AI-generated 1-sentence summary
   category?: ArticleCategory; // AI-assigned content category
   imageUrl?: string; // Thumbnail (feed media or og:image), if available
+  editorial?: EditorialVerdict; // LLM-as-editor "smell test" verdict (Phase 4)
+}
+
+/**
+ * The LLM-as-editor "smell test" verdict for a story (Phase 4). A cheap pass over
+ * the day's importance shortlist flags clickbait / soft news / near-duplicates so
+ * the curated "Today" surface can drop them — they remain visible in Browse, so
+ * the AI only *curates* over visible sources, it never hides the firehose.
+ */
+export interface EditorialVerdict {
+  drop: boolean; // true → omit from the "Today" top picks
+  reason?: string; // short why ("clickbait", "soft news", "duplicate of …")
 }
 
 /**
@@ -136,6 +148,58 @@ export interface DailyIntelligence {
 export type FeedbackSignal = 'up' | 'down' | 'hide';
 
 /**
+ * An implicit engagement signal captured from behavior (Phase 4) — distinct from
+ * an explicit 👍/👎. These are dense but noisy, so they nudge the model gently and
+ * are time-decayed. Position-biased/clickbait-prone signals are weakest.
+ * - `feed-open`     → opened a story from the feed (a click; noisy, position-biased)
+ * - `open-original` → clicked through to the original source (deliberate jump off-platform)
+ * - `read-to-end`   → scrolled to the bottom of the detail page
+ * - `dwell`         → spent genuine foreground time, length-normalized (see signals.ts)
+ * - `impression`    → shown in the feed but not engaged (weak negative)
+ */
+export type EngagementType =
+  | 'feed-open'
+  | 'open-original'
+  | 'read-to-end'
+  | 'dwell'
+  | 'impression';
+
+/**
+ * How much each implicit signal nudges the learned affinity (category + source
+ * weights, 0-100). Deliberately gentle vs. an explicit ±8 — implicit signals are
+ * noisy, and many accumulate. Quality signals (read-to-end, open-original)
+ * outweigh raw clicks; a bare feed click barely counts; an ignored impression
+ * is a small negative.
+ */
+export const ENGAGEMENT_AFFINITY_DELTA: Record<EngagementType, number> = {
+  'open-original': 4,
+  'read-to-end': 4,
+  'dwell': 2,
+  'feed-open': 1,
+  'impression': -0.5,
+};
+
+/**
+ * Which implicit signals are strong enough to also move the *semantic* profile
+ * vector (a genuine "I engaged with this content" signal). Bare clicks and
+ * impressions are too noisy to fold into the embedding profile.
+ */
+export const PROFILE_POSITIVE_ENGAGEMENTS: readonly EngagementType[] = [
+  'open-original',
+  'read-to-end',
+  'dwell',
+];
+
+/**
+ * Time-decay (Phase 4). Behavioral signals age out with an exponential ~30-day
+ * half-life so taste can drift; the stated onboarding prior (interestBaseline)
+ * decays far slower. When explicit feedback conflicts with the stated prior,
+ * explicit wins — it refreshes the decay clock, so it dominates while it's recent.
+ */
+export const SIGNAL_HALF_LIFE_DAYS = 30;
+export const ONBOARDING_HALF_LIFE_DAYS = 180;
+
+/**
  * User Preferences — the learned/manual model used to rank content.
  * Category weights start from the settings sliders and are nudged by feedback;
  * source weights are learned purely from feedback.
@@ -144,6 +208,11 @@ export interface UserPreferences {
   interests: Record<ArticleCategory, number>; // category → weight (0-100)
   sources: Record<string, number>; // sourceName → learned weight (0-100)
   mutedKeywords: string[]; // articles whose title/excerpt match are filtered out
+  // The stated/onboarding prior for category interest (Phase 4). Behavioral
+  // signals decay the live `interests` back toward this baseline (slow-decay);
+  // unset until onboarding/settings set it, in which case it falls back to 50.
+  interestBaseline?: Record<ArticleCategory, number>;
+  onboardedAt?: string; // ISO timestamp when onboarding was completed (Phase 4)
   updatedAt: string; // ISO timestamp
 }
 

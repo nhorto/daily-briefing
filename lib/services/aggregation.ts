@@ -9,7 +9,7 @@
  * articles (cards fall back to excerpts, articles simply lack categories).
  */
 
-import type { Briefing } from '../types';
+import type { Article, Briefing } from '../types';
 import {
   getActiveSources,
   getPreferences,
@@ -26,8 +26,15 @@ import { clusterArticles, sortClustersBySize, sortArticlesByTime } from './clust
 import { summarizeClusters, generateArticleSummaries } from './summarizer';
 import { categorizeArticles } from './categorizer';
 import { articleEmbeddingText, embedTexts } from './embeddings';
+import { runEditorialPass, type EditorialCandidate } from './editor';
 import { generateDailyIntelligence } from './intelligence';
 import { getTodayDateString, getBriefingTimeWindow } from '../utils/date';
+import { importanceScore } from '../utils/ranking';
+
+/** How many top-by-importance stories the editorial smell test reviews. */
+const EDITORIAL_SHORTLIST = 25;
+/** Cap the fraction of the shortlist the editor may drop (over-zeal guard). */
+const EDITORIAL_MAX_DROP_FRACTION = 0.4;
 
 export interface AggregationResult {
   success: true;
@@ -159,6 +166,54 @@ export async function runAggregation(): Promise<AggregationResult> {
     console.log(`[Aggregation] Embedded ${entries.length}/${all.length} articles`);
   } catch (error) {
     console.error('[Aggregation] Embedding failed (continuing):', error);
+  }
+
+  // LLM-as-editor smell test (non-fatal): one cheap pass over the day's top
+  // stories by importance flags clickbait / soft news / near-duplicates. We
+  // annotate the lead article so the curated "Today" surface can drop them; they
+  // stay visible in Browse, so the editor only *curates* over visible sources.
+  try {
+    const now = Date.now();
+    const ageHours = (a: Article) => (now - new Date(a.publishedAt).getTime()) / 3_600_000;
+    const shortlist = [
+      ...rawClusters.map((c) => ({
+        lead: c.representativeArticle,
+        importance: importanceScore({
+          clusterSize: c.articles.length,
+          sourceQuality: Math.max(...c.articles.map((a) => a.sourceAuthority ?? 50)),
+          ageHours: ageHours(c.representativeArticle),
+          affinity: 0,
+        }),
+      })),
+      ...individualArticles.map((a) => ({
+        lead: a,
+        importance: importanceScore({
+          clusterSize: 1,
+          sourceQuality: a.sourceAuthority ?? 50,
+          ageHours: ageHours(a),
+          affinity: 0,
+        }),
+      })),
+    ]
+      .sort((x, y) => y.importance - x.importance)
+      .slice(0, EDITORIAL_SHORTLIST);
+
+    const candidates: EditorialCandidate[] = shortlist.map(({ lead }) => ({
+      id: lead.id,
+      title: lead.title,
+      source: lead.sourceName,
+      summary: lead.summary ?? lead.excerpt ?? '',
+    }));
+    const verdicts = await runEditorialPass(
+      candidates,
+      Math.ceil(candidates.length * EDITORIAL_MAX_DROP_FRACTION)
+    );
+    for (const { lead } of shortlist) {
+      const verdict = verdicts.get(lead.id);
+      if (verdict) lead.editorial = verdict;
+    }
+  } catch (error) {
+    console.error('[Aggregation] Editorial pass failed (continuing):', error);
   }
 
   const clusters = sortClustersBySize(rawClusters);

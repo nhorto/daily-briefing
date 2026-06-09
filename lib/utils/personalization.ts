@@ -1,7 +1,14 @@
 import type { Article, ArticleCategory, FeedbackSignal, UserPreferences } from '../types';
-import { FEEDBACK_DELTAS, SCORE_WEIGHTS } from '../types';
+import {
+  FEEDBACK_DELTAS,
+  ONBOARDING_HALF_LIFE_DAYS,
+  SCORE_WEIGHTS,
+  SIGNAL_HALF_LIFE_DAYS,
+} from '../types';
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
+
+const MS_PER_DAY = 86_400_000;
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -43,16 +50,16 @@ export function getPersonalizationScore(
 }
 
 /**
- * Apply a training signal from one article to the preference model, returning a
- * new UserPreferences. The article's category weight and source weight are both
- * nudged by the signal's delta (clamped to 0-100). Pure — does not mutate input.
+ * Nudge the article's category weight and source weight by an arbitrary delta
+ * (clamped 0-100), returning new UserPreferences. Pure — does not mutate input.
+ * Used by both explicit feedback (large deltas) and implicit engagement signals
+ * (small fractional deltas, see signals.ts / Phase 4).
  */
-export function applyFeedback(
+export function applyAffinityNudge(
   preferences: UserPreferences,
   article: Pick<Article, 'category' | 'sourceName'>,
-  signal: FeedbackSignal
+  delta: number
 ): UserPreferences {
-  const delta = FEEDBACK_DELTAS[signal];
   const category = article.category || 'other';
   const currentCategory = preferences.interests[category] ?? 50;
   const currentSource = preferences.sources?.[article.sourceName] ?? 50;
@@ -69,6 +76,62 @@ export function applyFeedback(
     },
     updatedAt: preferences.updatedAt,
   };
+}
+
+/**
+ * Apply an explicit training signal (👍/👎/hide) from one article to the
+ * preference model. Thin wrapper over {@link applyAffinityNudge} with the
+ * signal's fixed delta. Pure — does not mutate input.
+ */
+export function applyFeedback(
+  preferences: UserPreferences,
+  article: Pick<Article, 'category' | 'sourceName'>,
+  signal: FeedbackSignal
+): UserPreferences {
+  return applyAffinityNudge(preferences, article, FEEDBACK_DELTAS[signal]);
+}
+
+/**
+ * Age the learned preference model toward its baselines (Phase 4 time-decay).
+ * Returns a new UserPreferences with weights relaxed by how long it's been since
+ * the model was last touched (`updatedAt`):
+ *  - Source weights relax toward neutral (50) with a ~30-day half-life.
+ *  - Category interest relaxes toward its stated baseline (onboarding prior, or
+ *    50 if none) with the same ~30-day half-life, while the baseline itself
+ *    relaxes toward 50 far slower (~180-day half-life) — so the deliberate
+ *    onboarding prior outlives transient behavioral drift.
+ *
+ * Decay is computed at scoring time and never persisted (storage keeps the raw,
+ * un-decayed values). Any new feedback refreshes `updatedAt`, resetting the
+ * clock — which is why a recent explicit signal dominates a stale stated prior.
+ * Pure — does not mutate input.
+ */
+export function decayPreferences(
+  preferences: UserPreferences,
+  now: number = Date.now()
+): UserPreferences {
+  const updated = Date.parse(preferences.updatedAt);
+  if (Number.isNaN(updated)) return preferences;
+  const days = Math.max(0, (now - updated) / MS_PER_DAY);
+  if (days === 0) return preferences;
+
+  const signalFactor = 0.5 ** (days / SIGNAL_HALF_LIFE_DAYS);
+  const baselineFactor = 0.5 ** (days / ONBOARDING_HALF_LIFE_DAYS);
+
+  const decayedInterests = {} as Record<ArticleCategory, number>;
+  for (const key of Object.keys(preferences.interests) as ArticleCategory[]) {
+    const value = preferences.interests[key] ?? 50;
+    const baseline = preferences.interestBaseline?.[key] ?? 50;
+    const decayedBaseline = 50 + (baseline - 50) * baselineFactor;
+    decayedInterests[key] = clamp(decayedBaseline + (value - baseline) * signalFactor);
+  }
+
+  const decayedSources: Record<string, number> = {};
+  for (const [name, value] of Object.entries(preferences.sources ?? {})) {
+    decayedSources[name] = clamp(50 + (value - 50) * signalFactor);
+  }
+
+  return { ...preferences, interests: decayedInterests, sources: decayedSources };
 }
 
 /**
