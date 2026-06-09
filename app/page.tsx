@@ -29,6 +29,26 @@ export default function Home() {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [fitScores, setFitScores] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [nudgeDismissed, setNudgeDismissed] = useState(true);
+
+  // First-run nudge: show the onboarding banner only until it's completed or
+  // dismissed (persisted, so it doesn't nag across visits).
+  useEffect(() => {
+    try {
+      setNudgeDismissed(localStorage.getItem('onboarding-nudge-dismissed') === '1');
+    } catch {
+      setNudgeDismissed(false);
+    }
+  }, []);
+
+  function dismissNudge() {
+    setNudgeDismissed(true);
+    try {
+      localStorage.setItem('onboarding-nudge-dismissed', '1');
+    } catch {
+      // best-effort
+    }
+  }
 
   useEffect(() => {
     async function fetchData() {
@@ -112,6 +132,32 @@ export default function Home() {
               top {topPicks.length} for you
             </p>
           </div>
+
+          {/* First-run onboarding nudge */}
+          {preferences && !preferences.onboardedAt && !nudgeDismissed && (
+            <Card className="p-4 flex items-center justify-between gap-3 border-accent/40">
+              <div className="text-sm text-text-secondary">
+                <span className="font-semibold text-text-primary">Tune your briefing.</span>{' '}
+                Tell it what you care about so Today gets sharper.
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <Link
+                  href="/onboarding"
+                  className="text-sm font-medium text-accent hover:text-accent-hover transition-colors"
+                >
+                  Set up →
+                </Link>
+                <button
+                  type="button"
+                  onClick={dismissNudge}
+                  aria-label="Dismiss"
+                  className="text-text-muted hover:text-text-primary transition-colors text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            </Card>
+          )}
 
           {/* "Today in 5" — the day's themes as bullets, on top */}
           {(todayInFive.length > 0 || intelligence?.topStories) && (
