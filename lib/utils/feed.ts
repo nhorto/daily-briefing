@@ -5,7 +5,7 @@
  */
 
 import type { Article, Briefing, Cluster, UserPreferences } from '../types';
-import { getPersonalizationScore } from './personalization';
+import { decayPreferences, getPersonalizationScore } from './personalization';
 import { rankIndices, type RankSignal } from './ranking';
 import { calculateTokenSimilarity } from './similarity';
 
@@ -20,6 +20,11 @@ export function feedItemKey(it: FeedItem): string {
 /** The articles backing a feed item (all of a cluster, or the single article). */
 export function feedItemArticles(it: FeedItem): Article[] {
   return it.kind === 'cluster' ? it.cluster.articles : [it.article];
+}
+
+/** The lead article for a feed item (a cluster's representative, or the article). */
+export function feedItemLead(it: FeedItem): Article {
+  return it.kind === 'cluster' ? it.cluster.representativeArticle : it.article;
 }
 
 /** A feed item's title, for topic-similarity (MMR) comparison. */
@@ -75,7 +80,10 @@ export function rankFeedItems(
   fitById: Record<string, number>
 ): FeedItem[] {
   if (items.length === 0) return items;
-  const signals = items.map((it) => feedItemSignal(it, prefs, fitById));
+  // Age the learned model toward its baselines before scoring (Phase 4) so a
+  // stale interest burst doesn't keep dominating weeks later.
+  const decayed = decayPreferences(prefs);
+  const signals = items.map((it) => feedItemSignal(it, decayed, fitById));
   const similarity = (i: number, j: number) =>
     calculateTokenSimilarity(feedItemTitle(items[i]!), feedItemTitle(items[j]!));
   return rankIndices(signals, similarity).map((i) => items[i]!);

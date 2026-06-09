@@ -15,6 +15,7 @@ import type {
   Article,
   Briefing,
   DailyIntelligence,
+  EngagementType,
   FeedbackSignal,
   ProfileState,
   SavedArticle,
@@ -143,6 +144,9 @@ const KEYS = {
   SEEN_URLS: 'seen:urls',
   BOOKMARKS: 'bookmarks',
   PROFILE: 'user:profile',
+  ENGAGEMENT_SEEN: 'engagement:seen',
+  IMPRESSIONS: 'impressions',
+  CLICK_RANKS: 'engagement:click-ranks',
   briefingByDate: (date: string) => `briefing:${date}`,
   articleContent: (url: string) => `content:${url}`,
   embeddingById: (id: string) => `emb:${id}`,
@@ -150,6 +154,9 @@ const KEYS = {
 
 /** Max number of seen article URLs to retain (most-recent-first). */
 const SEEN_URLS_CAP = 5000;
+
+/** Max click-rank samples retained for position-bias analysis (most-recent-first). */
+const CLICK_RANKS_CAP = 1000;
 
 // TTL Constants (in seconds)
 const TTL = {
@@ -433,6 +440,8 @@ function normalizePreferences(prefs: Partial<UserPreferences>): UserPreferences 
     interests: { ...DEFAULT_PREFERENCES.interests, ...(prefs.interests ?? {}) },
     sources: prefs.sources ?? {},
     mutedKeywords: prefs.mutedKeywords ?? [],
+    ...(prefs.interestBaseline ? { interestBaseline: prefs.interestBaseline } : {}),
+    ...(prefs.onboardedAt ? { onboardedAt: prefs.onboardedAt } : {}),
     updatedAt: prefs.updatedAt ?? new Date().toISOString(),
   };
 }
@@ -660,6 +669,79 @@ export async function getProfileVector(): Promise<number[] | null> {
   if (state.negCount === 0) return normalizeVector(meanPos);
   const meanNeg = scaleVector(state.negSum, 1 / state.negCount);
   return normalizeVector(subtractVectors(meanPos, scaleVector(meanNeg, PROFILE_DISLIKE_WEIGHT)));
+}
+
+/**
+ * Record that an implicit engagement signal of a given type has been applied for
+ * an article, so repeated fires (re-renders, re-scrolls) don't multiply its
+ * effect. Returns true if this is the FIRST time for this (article, type) — the
+ * caller should only apply the model update when true. Ephemeral (30-day TTL).
+ */
+export async function recordEngagementOnce(
+  articleId: string,
+  type: EngagementType
+): Promise<boolean> {
+  try {
+    const data = await store.get<string>(KEYS.ENGAGEMENT_SEEN);
+    const map = (data ? (typeof data === 'string' ? JSON.parse(data) : data) : {}) as Record<
+      string,
+      EngagementType[]
+    >;
+    const seen = map[articleId] ?? [];
+    if (seen.includes(type)) return false;
+    map[articleId] = [...seen, type];
+    await store.set(KEYS.ENGAGEMENT_SEEN, JSON.stringify(map), { ex: TTL.MONTH });
+    return true;
+  } catch (error) {
+    console.error('[KV] Error recording engagement:', error);
+    return false;
+  }
+}
+
+/**
+ * Increment the impression counter for an article (how many times it's been
+ * shown in the feed). Feeds Phase 5 impression-discounting. Ephemeral (30-day TTL).
+ */
+export async function incrementImpression(articleId: string): Promise<void> {
+  try {
+    const data = await store.get<string>(KEYS.IMPRESSIONS);
+    const map = (data ? (typeof data === 'string' ? JSON.parse(data) : data) : {}) as Record<
+      string,
+      number
+    >;
+    map[articleId] = (map[articleId] ?? 0) + 1;
+    await store.set(KEYS.IMPRESSIONS, JSON.stringify(map), { ex: TTL.MONTH });
+  } catch (error) {
+    console.error('[KV] Error incrementing impression:', error);
+  }
+}
+
+/** Get the impression counts (articleId → times shown). */
+export async function getImpressions(): Promise<Record<string, number>> {
+  try {
+    const data = await store.get<string>(KEYS.IMPRESSIONS);
+    if (!data) return {};
+    return (typeof data === 'string' ? JSON.parse(data) : data) as Record<string, number>;
+  } catch (error) {
+    console.error('[KV] Error getting impressions:', error);
+    return {};
+  }
+}
+
+/**
+ * Log the feed rank a click came from, so position bias can be measured later
+ * (top-of-feed items get clicked regardless of relevance). Capped, newest-first.
+ */
+export async function logClickRank(rank: number): Promise<void> {
+  if (!Number.isFinite(rank) || rank < 0) return;
+  try {
+    const data = await store.get<string>(KEYS.CLICK_RANKS);
+    const list = (data ? (typeof data === 'string' ? JSON.parse(data) : data) : []) as number[];
+    const updated = [rank, ...list].slice(0, CLICK_RANKS_CAP);
+    await store.set(KEYS.CLICK_RANKS, JSON.stringify(updated), { ex: TTL.MONTH });
+  } catch (error) {
+    console.error('[KV] Error logging click rank:', error);
+  }
 }
 
 /**

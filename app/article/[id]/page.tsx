@@ -12,6 +12,7 @@ import BookmarkButton from '@/components/ui/BookmarkButton';
 import { getSourceColor } from '@/components/ui/SourcePill';
 import { formatRelativeTime, getFreshnessCategory } from '@/lib/utils/date';
 import { SkeletonPage } from '@/components/ui/Skeleton';
+import { useArticleEngagement } from '@/lib/hooks/useArticleEngagement';
 
 export default function ArticleDetailPage() {
   const params = useParams();
@@ -96,6 +97,14 @@ export default function ArticleDetailPage() {
       cancelled = true;
     };
   }, [id]);
+
+  // Implicit engagement capture (Phase 4): length-normalize dwell against the
+  // text actually on the page (full extracted text when loaded, else summary +
+  // excerpt). Hook must run before any early return.
+  const contentChars = (
+    articleContent ?? `${article?.summary ?? ''} ${article?.excerpt ?? ''}`
+  ).length;
+  const { readToEndRef, onOpenOriginal } = useArticleEngagement(article, contentChars);
 
   async function handleFeedback(signal: FeedbackSignal) {
     if (!article) return;
@@ -260,6 +269,7 @@ export default function ArticleDetailPage() {
               href={article.url}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={onOpenOriginal}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-bg-primary rounded-lg hover:bg-accent-hover transition-colors font-medium"
             >
               Read Original
@@ -290,6 +300,9 @@ export default function ArticleDetailPage() {
               </div>
             </div>
           )}
+
+          {/* Read-to-end sentinel (Phase 4 engagement signal). */}
+          <div ref={readToEndRef} aria-hidden="true" className="h-px" />
         </div>
 
         {/* Chat Panel - Right side */}

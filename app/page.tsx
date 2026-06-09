@@ -7,6 +7,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import ArticleCard from '@/components/ArticleCard';
 import ClusterCard from '@/components/ClusterCard';
 import ChatPanel from '@/components/ChatPanel';
+import EngagementTracker from '@/components/EngagementTracker';
 import Card from '@/components/ui/Card';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 import { isMuted } from '@/lib/utils/personalization';
@@ -15,6 +16,7 @@ import {
   buildFeedItems,
   feedItemArticles,
   feedItemKey,
+  feedItemLead,
   rankFeedItems,
 } from '@/lib/utils/feed';
 
@@ -138,20 +140,30 @@ export default function Home() {
           <div>
             <h2 className="text-sm font-semibold text-text-primary mb-3">Top picks</h2>
             <ol className="space-y-3">
-              {topPicks.map((item, i) => (
-                <li key={feedItemKey(item)} className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 mt-1 rounded-full bg-bg-elevated text-text-muted text-xs font-mono font-semibold flex items-center justify-center">
-                    {i + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    {item.kind === 'cluster' ? (
-                      <ClusterCard cluster={item.cluster} />
-                    ) : (
-                      <ArticleCard article={item.article} />
-                    )}
-                  </div>
-                </li>
-              ))}
+              {topPicks.map((item, i) => {
+                const lead = feedItemLead(item);
+                return (
+                  <li key={feedItemKey(item)} className="flex gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 mt-1 rounded-full bg-bg-elevated text-text-muted text-xs font-mono font-semibold flex items-center justify-center">
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <EngagementTracker
+                        articleId={lead.id}
+                        rank={i + 1}
+                        category={lead.category}
+                        sourceName={lead.sourceName}
+                      >
+                        {item.kind === 'cluster' ? (
+                          <ClusterCard cluster={item.cluster} />
+                        ) : (
+                          <ArticleCard article={item.article} />
+                        )}
+                      </EngagementTracker>
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
           </div>
 

@@ -3,11 +3,13 @@ import {
   getPersonalizationScore,
   sortByPreference,
   applyFeedback,
+  applyAffinityNudge,
+  decayPreferences,
   mapIntelligenceCategoryToSlug,
   isMuted,
 } from './personalization';
-import { DEFAULT_PREFERENCES } from '../types';
-import type { Article, UserPreferences } from '../types';
+import { DEFAULT_PREFERENCES, SIGNAL_HALF_LIFE_DAYS } from '../types';
+import type { Article, ArticleCategory, UserPreferences } from '../types';
 
 function makeArticle(overrides: Partial<Article> = {}): Article {
   return {
@@ -165,5 +167,77 @@ describe('mapIntelligenceCategoryToSlug', () => {
 
   test('falls back to "other" for unknown names', () => {
     expect(mapIntelligenceCategoryToSlug('Weather report')).toBe('other');
+  });
+});
+
+describe('applyAffinityNudge', () => {
+  const article = makeArticle({ category: 'science', sourceName: 'Source' });
+
+  test('nudges category and source by a fractional delta', () => {
+    const next = applyAffinityNudge(prefs, article, 4);
+    expect(next.interests.science).toBe(54);
+    expect(next.sources.Source).toBe(54);
+  });
+
+  test('a negative delta lowers, clamped to 0', () => {
+    const low: UserPreferences = { ...prefs, sources: { Source: 0.2 } };
+    expect(applyAffinityNudge(low, article, -0.5).sources.Source).toBe(0);
+  });
+
+  test('does not mutate the input preferences', () => {
+    const before = JSON.stringify(prefs);
+    applyAffinityNudge(prefs, article, 2);
+    expect(JSON.stringify(prefs)).toBe(before);
+  });
+});
+
+describe('decayPreferences', () => {
+  const base = '2026-06-08T00:00:00.000Z';
+  const day = (n: number) => Date.parse(base) + n * 86_400_000;
+
+  test('no time elapsed → unchanged', () => {
+    const p: UserPreferences = { ...prefs, sources: { Source: 90 }, updatedAt: base };
+    expect(decayPreferences(p, Date.parse(base))).toEqual(p);
+  });
+
+  test('source weights relax halfway to neutral after one half-life', () => {
+    const p: UserPreferences = { ...prefs, sources: { Source: 90 }, updatedAt: base };
+    const decayed = decayPreferences(p, day(SIGNAL_HALF_LIFE_DAYS));
+    // 50 + (90-50)*0.5 = 70
+    expect(decayed.sources.Source).toBeCloseTo(70, 5);
+  });
+
+  test('category interest relaxes toward its stated baseline, not all the way to 50', () => {
+    const interestBaseline = { ...DEFAULT_PREFERENCES.interests, 'ai-ml': 80 } as Record<
+      ArticleCategory,
+      number
+    >;
+    const p: UserPreferences = {
+      ...prefs,
+      interests: { ...prefs.interests, 'ai-ml': 100 },
+      interestBaseline,
+      updatedAt: base,
+    };
+    const decayed = decayPreferences(p, day(SIGNAL_HALF_LIFE_DAYS));
+    // baseline barely moves (180d half-life); live value relaxes halfway from 100→~80
+    expect(decayed.interests['ai-ml']).toBeGreaterThan(85);
+    expect(decayed.interests['ai-ml']).toBeLessThan(95);
+  });
+
+  test('decays toward 50 when there is no baseline', () => {
+    const p: UserPreferences = {
+      ...prefs,
+      interests: { ...prefs.interests, business: 10 },
+      updatedAt: base,
+    };
+    const decayed = decayPreferences(p, day(SIGNAL_HALF_LIFE_DAYS));
+    expect(decayed.interests.business).toBeCloseTo(30, 5); // 50 + (10-50)*0.5
+  });
+
+  test('does not mutate the input', () => {
+    const p: UserPreferences = { ...prefs, sources: { Source: 90 }, updatedAt: base };
+    const before = JSON.stringify(p);
+    decayPreferences(p, day(60));
+    expect(JSON.stringify(p)).toBe(before);
   });
 });
