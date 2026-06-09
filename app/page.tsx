@@ -11,12 +11,15 @@ import EngagementTracker from '@/components/EngagementTracker';
 import Card from '@/components/ui/Card';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 import { isMuted } from '@/lib/utils/personalization';
+import { type FatigueInput, isImpressionExhausted } from '@/lib/utils/fatigue';
+import { explainRanking } from '@/lib/utils/explain';
 import {
   type FeedItem,
   buildFeedItems,
   feedItemArticles,
   feedItemKey,
   feedItemLead,
+  feedItemTime,
   rankFeedItems,
 } from '@/lib/utils/feed';
 
@@ -28,8 +31,39 @@ export default function Home() {
   const [intelligence, setIntelligence] = useState<DailyIntelligence | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [fitScores, setFitScores] = useState<Record<string, number>>({});
+  const [fatigue, setFatigue] = useState<FatigueInput | null>(null);
   const [loading, setLoading] = useState(true);
   const [nudgeDismissed, setNudgeDismissed] = useState(true);
+  // Articles the user tapped "Less like this" on this session — flips the
+  // why-chip to a confirmation without yanking the list out from under them.
+  const [tunedDown, setTunedDown] = useState<Set<string>>(new Set());
+
+  // "Less like this" from a Top pick's why-chip — a fast, transparent tuning
+  // path (Phase 5 #29). Fires a 'down' signal on the lead article (lowering its
+  // topic + source and pushing the semantic profile away); takes effect on the
+  // next load so the current list stays put.
+  async function tuneLess(article: Article) {
+    setTunedDown((prev) => new Set(prev).add(article.id));
+    try {
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          articleId: article.id,
+          signal: 'down',
+          category: article.category,
+          sourceName: article.sourceName,
+        }),
+      });
+    } catch {
+      // best-effort — the confirmation already showed; revert on failure.
+      setTunedDown((prev) => {
+        const next = new Set(prev);
+        next.delete(article.id);
+        return next;
+      });
+    }
+  }
 
   // First-run nudge: show the onboarding banner only until it's completed or
   // dismissed (persisted, so it doesn't nag across visits).
@@ -53,11 +87,12 @@ export default function Home() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [briefingRes, intelligenceRes, prefsRes, profileRes] = await Promise.all([
+        const [briefingRes, intelligenceRes, prefsRes, profileRes, signalsRes] = await Promise.all([
           fetch('/api/briefing'),
           fetch('/api/intelligence'),
           fetch('/api/preferences'),
           fetch('/api/profile'),
+          fetch('/api/signals'),
         ]);
 
         const briefingData = await briefingRes.json();
@@ -72,6 +107,14 @@ export default function Home() {
         const profileData = await profileRes.json();
         if (profileRes.ok && profileData.success && profileData.ready) {
           setFitScores(profileData.fit || {});
+        }
+
+        const signalsData = await signalsRes.json();
+        if (signalsRes.ok && signalsData.success) {
+          setFatigue({
+            impressions: signalsData.impressions ?? {},
+            engaged: new Set<string>(signalsData.engaged ?? []),
+          });
         }
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
@@ -101,12 +144,21 @@ export default function Home() {
       muted.length > 0
         ? items.filter((it) => feedItemArticles(it).some((a) => !isMuted(a, muted)))
         : items;
-    // Drop items the LLM-as-editor smell test flagged (Phase 4). They stay in
-    // Browse — Today is the curated surface, so the editor only trims it here.
-    const curated = visible.filter((it) => !feedItemLead(it).editorial?.drop);
-    const ranked = preferences ? rankFeedItems(curated, preferences, fitScores) : curated;
+    // Drop items the LLM-as-editor smell test flagged (Phase 4) and items shown
+    // so many times unengaged they're exhausted (Phase 5). Both stay in Browse —
+    // Today is the curated surface, so we only trim it here.
+    const curated = visible.filter((it) => {
+      const lead = feedItemLead(it);
+      if (lead.editorial?.drop) return false;
+      if (fatigue && isImpressionExhausted(fatigue.impressions[lead.id] ?? 0, fatigue.engaged.has(lead.id)))
+        return false;
+      return true;
+    });
+    const ranked = preferences
+      ? rankFeedItems(curated, preferences, fitScores, { fatigue: fatigue ?? undefined })
+      : curated;
     return ranked.slice(0, TOP_PICKS);
-  }, [briefing, preferences, fitScores]);
+  }, [briefing, preferences, fitScores, fatigue]);
 
   // "Today in 5" — the day's biggest themes as bullets (most-covered first).
   const todayInFive = useMemo(() => {
@@ -191,6 +243,21 @@ export default function Home() {
             <ol className="space-y-3">
               {topPicks.map((item, i) => {
                 const lead = feedItemLead(item);
+                const articles = feedItemArticles(item);
+                const fits = articles
+                  .map((a) => fitScores[a.id])
+                  .filter((x): x is number => typeof x === 'number');
+                const reason = preferences
+                  ? explainRanking({
+                      category: lead.category ?? 'other',
+                      sourceName: lead.sourceName,
+                      sourceCount: new Set(articles.map((a) => a.sourceName)).size,
+                      ageHours: (Date.now() - feedItemTime(item)) / 3_600_000,
+                      fit: fits.length > 0 ? Math.max(...fits) : undefined,
+                      preferences,
+                    })
+                  : null;
+                const tuned = tunedDown.has(lead.id);
                 return (
                   <li key={feedItemKey(item)} className="flex gap-3">
                     <span className="flex-shrink-0 w-6 h-6 mt-1 rounded-full bg-bg-elevated text-text-muted text-xs font-mono font-semibold flex items-center justify-center">
@@ -209,6 +276,26 @@ export default function Home() {
                           <ArticleCard article={item.article} />
                         )}
                       </EngagementTracker>
+                      {/* Why you're seeing this + a fast tuning path (Phase 5) */}
+                      {reason && (
+                        <div className="flex items-center gap-2 mt-1.5 px-1 text-xs text-text-muted">
+                          {tuned ? (
+                            <span className="text-status-new">Got it — we'll show less like this</span>
+                          ) : (
+                            <>
+                              <span className="truncate">{reason.label}</span>
+                              <span className="text-text-muted/50">·</span>
+                              <button
+                                type="button"
+                                onClick={() => tuneLess(lead)}
+                                className="flex-shrink-0 text-text-muted hover:text-text-secondary transition-colors font-medium"
+                              >
+                                Less like this
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </li>
                 );

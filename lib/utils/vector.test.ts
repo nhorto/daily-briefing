@@ -6,6 +6,8 @@ import {
   scaleVector,
   subtractVectors,
   normalizeVector,
+  kMeans,
+  maxCosineSimilarity,
 } from './vector';
 
 describe('cosineSimilarity', () => {
@@ -76,5 +78,80 @@ describe('normalizeVector', () => {
   it('a normalized vector is cosine-1 with the original', () => {
     const v = [2, -5, 1, 8];
     expect(cosineSimilarity(v, normalizeVector(v))).toBeCloseTo(1, 10);
+  });
+});
+
+describe('kMeans', () => {
+  // Three clearly-separated directions in 3D (axis-aligned groups).
+  const groupX = [
+    [10, 0, 0],
+    [9, 1, 0],
+    [10, 0, 1],
+  ];
+  const groupY = [
+    [0, 10, 0],
+    [1, 9, 0],
+    [0, 10, 1],
+  ];
+  const groupZ = [
+    [0, 0, 10],
+    [0, 1, 9],
+    [1, 0, 10],
+  ];
+
+  it('returns one centroid for k=1 (the mean)', () => {
+    const c = kMeans([[2, 0], [4, 0]], 1);
+    expect(c).toHaveLength(1);
+    expect(c[0]).toEqual([3, 0]);
+  });
+
+  it('returns [] for no input', () => {
+    expect(kMeans([], 3)).toEqual([]);
+  });
+
+  it('recovers three well-separated clusters', () => {
+    const centroids = kMeans([...groupX, ...groupY, ...groupZ], 3);
+    expect(centroids).toHaveLength(3);
+    // Each original group should map cleanly to one centroid (cosine ~1).
+    for (const group of [groupX, groupY, groupZ]) {
+      const member = group[0] as number[];
+      expect(maxCosineSimilarity(member, centroids)).toBeGreaterThan(0.95);
+    }
+  });
+
+  it('keeps niche groups separate (the whole point of multi-cluster)', () => {
+    // 9 mainstream X-ish vectors + 1 niche Z vector. A single mean would bury Z;
+    // k-means should give it (or a near-Z direction) its own centroid.
+    const niche = [0, 0, 10];
+    const data = [...groupX, ...groupX, ...groupX, niche];
+    const centroids = kMeans(data, 3);
+    expect(maxCosineSimilarity(niche, centroids)).toBeGreaterThan(0.9);
+  });
+
+  it('drops empty clusters when k exceeds the number of distinct groups', () => {
+    // Only two distinct directions but k=5 — should not return 5 padded centroids.
+    const centroids = kMeans([...groupX, ...groupY], 5);
+    expect(centroids.length).toBeLessThanOrEqual(6);
+    expect(centroids.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('is deterministic (same input → same centroids)', () => {
+    const data = [...groupX, ...groupY, ...groupZ];
+    expect(kMeans(data, 3)).toEqual(kMeans(data, 3));
+  });
+});
+
+describe('maxCosineSimilarity', () => {
+  it('returns the best similarity across centroids', () => {
+    const v = [1, 0, 0];
+    const centroids = [
+      [0, 1, 0], // orthogonal → 0
+      [1, 0, 0], // identical → 1
+    ];
+    expect(maxCosineSimilarity(v, centroids)).toBeCloseTo(1, 10);
+  });
+
+  it('returns 0 for no centroids', () => {
+    expect(maxCosineSimilarity([1, 2, 3], [])).toBe(0);
   });
 });

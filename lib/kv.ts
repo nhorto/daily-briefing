@@ -22,8 +22,21 @@ import type {
   Source,
   UserPreferences,
 } from './types';
-import { DEFAULT_PREFERENCES, PROFILE_DISLIKE_WEIGHT } from './types';
-import { addVectors, normalizeVector, scaleVector, subtractVectors } from './utils/vector';
+import {
+  DEFAULT_PREFERENCES,
+  MULTI_CLUSTER_MIN_LIKES,
+  PROFILE_DISLIKE_WEIGHT,
+  PROFILE_MAX_CENTROIDS,
+  PROFILE_MIN_CENTROIDS,
+  PROFILE_VECTORS_CAP,
+} from './types';
+import {
+  addVectors,
+  kMeans,
+  normalizeVector,
+  scaleVector,
+  subtractVectors,
+} from './utils/vector';
 
 // Check if KV is configured
 const hasKV = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
@@ -646,6 +659,9 @@ export async function updateProfile(embedding: number[], polarity: number): Prom
     if (polarity >= 0) {
       state.posSum = addVectors(state.posSum, embedding);
       state.posCount += 1;
+      // Retain the exemplar (newest-first, capped) so the profile can be split
+      // into k interest centroids once enough likes accumulate (Phase 5).
+      state.posVectors = [embedding, ...(state.posVectors ?? [])].slice(0, PROFILE_VECTORS_CAP);
     } else {
       state.negSum = addVectors(state.negSum, embedding);
       state.negCount += 1;
@@ -669,6 +685,40 @@ export async function getProfileVector(): Promise<number[] | null> {
   if (state.negCount === 0) return normalizeVector(meanPos);
   const meanNeg = scaleVector(state.negSum, 1 / state.negCount);
   return normalizeVector(subtractVectors(meanPos, scaleVector(meanNeg, PROFILE_DISLIKE_WEIGHT)));
+}
+
+/** k for the multi-cluster profile, scaled to the number of liked exemplars. */
+function centroidCount(n: number): number {
+  return Math.min(PROFILE_MAX_CENTROIDS, Math.max(PROFILE_MIN_CENTROIDS, Math.round(Math.sqrt(n / 2))));
+}
+
+/**
+ * The user's interest profile as one *or more* centroids (Phase 5). Personal fit
+ * is then the *max* cosine to any centroid, so a niche interest gets its own
+ * cluster instead of being averaged into the dominant one (§A5).
+ *
+ * Below {@link MULTI_CLUSTER_MIN_LIKES} retained liked exemplars (or for older
+ * profiles that predate exemplar retention), this returns the single centroid —
+ * identical to {@link getProfileVector} — so multi-cluster activates gracefully
+ * as likes accumulate. Each centroid is pushed away from disliked content
+ * (− λ·mean(neg)) and L2-normalized. Returns null at cold start (no likes yet).
+ */
+export async function getProfileCentroids(): Promise<number[][] | null> {
+  const state = await getProfileState();
+  if (!state || state.posCount === 0) return null;
+
+  const meanNeg = state.negCount > 0 ? scaleVector(state.negSum, 1 / state.negCount) : null;
+  const applyNeg = (v: number[]) =>
+    normalizeVector(meanNeg ? subtractVectors(v, scaleVector(meanNeg, PROFILE_DISLIKE_WEIGHT)) : v);
+
+  const exemplars = state.posVectors ?? [];
+  if (exemplars.length >= MULTI_CLUSTER_MIN_LIKES) {
+    const centroids = kMeans(exemplars, centroidCount(exemplars.length));
+    if (centroids.length > 0) return centroids.map(applyNeg);
+  }
+
+  // Single-centroid fallback (cold-ish start or pre-Phase-5 profile).
+  return [applyNeg(scaleVector(state.posSum, 1 / state.posCount))];
 }
 
 /**
@@ -725,6 +775,25 @@ export async function getImpressions(): Promise<Record<string, number>> {
   } catch (error) {
     console.error('[KV] Error getting impressions:', error);
     return {};
+  }
+}
+
+/**
+ * Article ids the user has actually engaged with (any recorded non-impression
+ * signal — feed-open, open-original, read-to-end, genuine dwell). Impressions are
+ * counted separately and never land in the engagement-seen map, so its keys are
+ * exactly the engaged set — used by Phase 5 fatigue to exempt engaged items from
+ * impression discounting.
+ */
+export async function getEngagedArticleIds(): Promise<string[]> {
+  try {
+    const data = await store.get<string>(KEYS.ENGAGEMENT_SEEN);
+    if (!data) return [];
+    const map = (typeof data === 'string' ? JSON.parse(data) : data) as Record<string, unknown>;
+    return Object.keys(map);
+  } catch (error) {
+    console.error('[KV] Error getting engaged article ids:', error);
+    return [];
   }
 }
 

@@ -9,13 +9,15 @@
  */
 
 import { NextResponse } from 'next/server';
-import { getProfileVector, getTodaysBriefing, getCachedEmbedding } from '@/lib/kv';
-import { cosineSimilarity } from '@/lib/utils/vector';
+import { getProfileCentroids, getTodaysBriefing, getCachedEmbedding } from '@/lib/kv';
+import { maxCosineSimilarity } from '@/lib/utils/vector';
 
 export async function GET() {
   try {
-    const profile = await getProfileVector();
-    if (!profile) {
+    // Multi-centroid interest profile (Phase 5): one centroid until ~20 likes,
+    // then k≈3–6. Fit is the max cosine to any centroid so niche tastes count.
+    const centroids = await getProfileCentroids();
+    if (!centroids) {
       // Cold start: no positive signals yet — feed falls back to importance + affinity.
       return NextResponse.json({ success: true, ready: false, fit: {} });
     }
@@ -34,10 +36,10 @@ export async function GET() {
     const fit: Record<string, number> = {};
     articles.forEach((a, i) => {
       const emb = embeddings[i];
-      if (emb) fit[a.id] = cosineSimilarity(emb, profile);
+      if (emb) fit[a.id] = maxCosineSimilarity(emb, centroids);
     });
 
-    return NextResponse.json({ success: true, ready: true, fit });
+    return NextResponse.json({ success: true, ready: true, fit, centroids: centroids.length });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: (error as Error).message },

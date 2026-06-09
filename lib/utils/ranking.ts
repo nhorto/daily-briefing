@@ -219,10 +219,17 @@ export function rankIndices(
     mmrLambda?: number;
     explorationSlots?: number;
     topRegion?: number;
+    /** Optional per-item score multipliers (≤1), aligned to `signals`. Applied to
+     *  the blended score before MMR — used for day-level fatigue / impression
+     *  discounting (Phase 5) without touching the long-term learned weights. */
+    multipliers?: number[];
   } = {}
 ): number[] {
   if (signals.length === 0) return [];
-  const scores = blendScores(signals, opts.weights, opts.gravity);
+  const blended = blendScores(signals, opts.weights, opts.gravity);
+  const scores = opts.multipliers
+    ? blended.map((s, i) => s * (opts.multipliers?.[i] ?? 1))
+    : blended;
   const mmrOrder = mmrRerank(scores, similarity, opts.mmrLambda);
   return promoteExploration(mmrOrder, signals, {
     slots: opts.explorationSlots,
