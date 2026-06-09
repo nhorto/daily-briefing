@@ -5,6 +5,7 @@
  */
 
 import type { Article, Briefing, Cluster, UserPreferences } from '../types';
+import { type FatigueInput, fatigueMultipliers } from './fatigue';
 import { decayPreferences, getPersonalizationScore } from './personalization';
 import { rankIndices, type RankSignal } from './ranking';
 import { calculateTokenSimilarity } from './similarity';
@@ -77,7 +78,8 @@ export function buildFeedItems(briefing: Briefing): FeedItem[] {
 export function rankFeedItems(
   items: FeedItem[],
   prefs: UserPreferences,
-  fitById: Record<string, number>
+  fitById: Record<string, number>,
+  opts: { fatigue?: FatigueInput } = {}
 ): FeedItem[] {
   if (items.length === 0) return items;
   // Age the learned model toward its baselines before scoring (Phase 4) so a
@@ -86,5 +88,17 @@ export function rankFeedItems(
   const signals = items.map((it) => feedItemSignal(it, decayed, fitById));
   const similarity = (i: number, j: number) =>
     calculateTokenSimilarity(feedItemTitle(items[i]!), feedItemTitle(items[j]!));
-  return rankIndices(signals, similarity).map((i) => items[i]!);
+  // Day-level fatigue (Phase 5): softly demote items shown repeatedly without
+  // engagement, and damp categories the user keeps skipping today. Keyed by the
+  // lead article id (what the impression tracker records). Never persisted.
+  const multipliers = opts.fatigue
+    ? fatigueMultipliers(
+        items.map((it) => {
+          const lead = feedItemLead(it);
+          return { id: lead.id, category: lead.category ?? 'other' };
+        }),
+        opts.fatigue
+      )
+    : undefined;
+  return rankIndices(signals, similarity, { multipliers }).map((i) => items[i]!);
 }

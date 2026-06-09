@@ -11,6 +11,7 @@ import EngagementTracker from '@/components/EngagementTracker';
 import Card from '@/components/ui/Card';
 import { SkeletonPage } from '@/components/ui/Skeleton';
 import { isMuted } from '@/lib/utils/personalization';
+import { type FatigueInput, isImpressionExhausted } from '@/lib/utils/fatigue';
 import {
   type FeedItem,
   buildFeedItems,
@@ -28,6 +29,7 @@ export default function Home() {
   const [intelligence, setIntelligence] = useState<DailyIntelligence | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [fitScores, setFitScores] = useState<Record<string, number>>({});
+  const [fatigue, setFatigue] = useState<FatigueInput | null>(null);
   const [loading, setLoading] = useState(true);
   const [nudgeDismissed, setNudgeDismissed] = useState(true);
 
@@ -53,11 +55,12 @@ export default function Home() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [briefingRes, intelligenceRes, prefsRes, profileRes] = await Promise.all([
+        const [briefingRes, intelligenceRes, prefsRes, profileRes, signalsRes] = await Promise.all([
           fetch('/api/briefing'),
           fetch('/api/intelligence'),
           fetch('/api/preferences'),
           fetch('/api/profile'),
+          fetch('/api/signals'),
         ]);
 
         const briefingData = await briefingRes.json();
@@ -72,6 +75,14 @@ export default function Home() {
         const profileData = await profileRes.json();
         if (profileRes.ok && profileData.success && profileData.ready) {
           setFitScores(profileData.fit || {});
+        }
+
+        const signalsData = await signalsRes.json();
+        if (signalsRes.ok && signalsData.success) {
+          setFatigue({
+            impressions: signalsData.impressions ?? {},
+            engaged: new Set<string>(signalsData.engaged ?? []),
+          });
         }
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
@@ -101,12 +112,21 @@ export default function Home() {
       muted.length > 0
         ? items.filter((it) => feedItemArticles(it).some((a) => !isMuted(a, muted)))
         : items;
-    // Drop items the LLM-as-editor smell test flagged (Phase 4). They stay in
-    // Browse — Today is the curated surface, so the editor only trims it here.
-    const curated = visible.filter((it) => !feedItemLead(it).editorial?.drop);
-    const ranked = preferences ? rankFeedItems(curated, preferences, fitScores) : curated;
+    // Drop items the LLM-as-editor smell test flagged (Phase 4) and items shown
+    // so many times unengaged they're exhausted (Phase 5). Both stay in Browse —
+    // Today is the curated surface, so we only trim it here.
+    const curated = visible.filter((it) => {
+      const lead = feedItemLead(it);
+      if (lead.editorial?.drop) return false;
+      if (fatigue && isImpressionExhausted(fatigue.impressions[lead.id] ?? 0, fatigue.engaged.has(lead.id)))
+        return false;
+      return true;
+    });
+    const ranked = preferences
+      ? rankFeedItems(curated, preferences, fitScores, { fatigue: fatigue ?? undefined })
+      : curated;
     return ranked.slice(0, TOP_PICKS);
-  }, [briefing, preferences, fitScores]);
+  }, [briefing, preferences, fitScores, fatigue]);
 
   // "Today in 5" — the day's biggest themes as bullets (most-covered first).
   const todayInFive = useMemo(() => {

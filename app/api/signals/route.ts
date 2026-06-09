@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import {
   getCachedEmbedding,
+  getEngagedArticleIds,
+  getImpressions,
   getPreferences,
   incrementImpression,
   logClickRank,
@@ -24,6 +26,27 @@ const VALID_TYPES: EngagementType[] = [
   'dwell',
   'impression',
 ];
+
+/**
+ * Return the inputs Phase 5 fatigue needs: how many times each article has been
+ * shown, and which articles the user has engaged with. The Today surface uses
+ * these to demote / drop items shown repeatedly without engagement and to damp
+ * over-shown categories — all day-level, never touching the learned weights.
+ */
+export async function GET() {
+  try {
+    const [impressions, engaged] = await Promise.all([
+      getImpressions(),
+      getEngagedArticleIds(),
+    ]);
+    return NextResponse.json({ success: true, impressions, engaged });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: (error as Error).message },
+      { status: 500 }
+    );
+  }
+}
 
 interface SignalBody {
   articleId?: string;

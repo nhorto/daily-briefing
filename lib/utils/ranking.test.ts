@@ -193,4 +193,17 @@ describe('rankIndices', () => {
     const order = rankIndices(signals, () => 0);
     expect(order[0]).toBe(1);
   });
+
+  it('demotes an item via a fatigue multiplier (Phase 5)', () => {
+    const signals = [
+      sig({ clusterSize: 6, sourceQuality: 95, affinity: 95, ageHours: 1 }), // would win
+      sig({ clusterSize: 3, sourceQuality: 80, affinity: 80, ageHours: 2 }), // strong runner-up
+      sig({ clusterSize: 1, sourceQuality: 40, affinity: 30, ageHours: 50 }),
+    ];
+    // Without fatigue, item 0 leads.
+    expect(rankIndices(signals, () => 0)[0]).toBe(0);
+    // Crush item 0's score — the runner-up should overtake it.
+    const order = rankIndices(signals, () => 0, { multipliers: [0.01, 1, 1] });
+    expect(order[0]).toBe(1);
+  });
 });

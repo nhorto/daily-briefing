@@ -779,6 +779,25 @@ export async function getImpressions(): Promise<Record<string, number>> {
 }
 
 /**
+ * Article ids the user has actually engaged with (any recorded non-impression
+ * signal — feed-open, open-original, read-to-end, genuine dwell). Impressions are
+ * counted separately and never land in the engagement-seen map, so its keys are
+ * exactly the engaged set — used by Phase 5 fatigue to exempt engaged items from
+ * impression discounting.
+ */
+export async function getEngagedArticleIds(): Promise<string[]> {
+  try {
+    const data = await store.get<string>(KEYS.ENGAGEMENT_SEEN);
+    if (!data) return [];
+    const map = (typeof data === 'string' ? JSON.parse(data) : data) as Record<string, unknown>;
+    return Object.keys(map);
+  } catch (error) {
+    console.error('[KV] Error getting engaged article ids:', error);
+    return [];
+  }
+}
+
+/**
  * Log the feed rank a click came from, so position bias can be measured later
  * (top-of-feed items get clicked regardless of relevance). Capped, newest-first.
  */
