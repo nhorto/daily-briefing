@@ -8,6 +8,7 @@ import {
   mmrRerank,
   promoteExploration,
   rankIndices,
+  lambdaForDiversity,
 } from './ranking';
 
 const sig = (s: Partial<RankSignal> = {}): RankSignal => ({
@@ -168,6 +169,26 @@ describe('promoteExploration', () => {
     const order = Array.from({ length: 20 }, (_, i) => i);
     const out = promoteExploration(order, signals, { slots: 2, topRegion: 12 });
     expect([...out].sort((a, b) => a - b)).toEqual(order);
+  });
+});
+
+describe('lambdaForDiversity', () => {
+  it('maps 0 (focused) to the high-λ end and 100 (diverse) to the low end', () => {
+    expect(lambdaForDiversity(0)).toBeCloseTo(0.9, 10);
+    expect(lambdaForDiversity(100)).toBeCloseTo(0.4, 10);
+  });
+
+  it('maps the default dial (40) back to the original λ 0.7', () => {
+    expect(lambdaForDiversity(40)).toBeCloseTo(0.7, 10);
+  });
+
+  it('is monotonically decreasing (more diverse → lower λ)', () => {
+    expect(lambdaForDiversity(20)).toBeGreaterThan(lambdaForDiversity(80));
+  });
+
+  it('clamps out-of-range input', () => {
+    expect(lambdaForDiversity(-50)).toBeCloseTo(0.9, 10);
+    expect(lambdaForDiversity(999)).toBeCloseTo(0.4, 10);
   });
 });
 

@@ -22,7 +22,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { interests, sources, mutedKeywords } = body;
+    const { interests, sources, mutedKeywords, diversity } = body;
 
     if (!interests || typeof interests !== 'object') {
       return NextResponse.json(
@@ -78,7 +78,16 @@ export async function PUT(request: NextRequest) {
       ];
     }
 
+    // `diversity` is optional (0-100). Validate when present; else keep stored.
+    if (diversity !== undefined && (typeof diversity !== 'number' || diversity < 0 || diversity > 100)) {
+      return NextResponse.json(
+        { success: false, error: 'diversity must be a number 0-100 when provided' },
+        { status: 400 }
+      );
+    }
+
     const existing = await getPreferences();
+    const nextDiversity = diversity ?? existing.diversity;
     const preferences: UserPreferences = {
       interests,
       sources: sources ?? existing.sources,
@@ -88,6 +97,7 @@ export async function PUT(request: NextRequest) {
       // baseline (and re-trigger the first-run nudge) on every Save.
       ...(existing.interestBaseline ? { interestBaseline: existing.interestBaseline } : {}),
       ...(existing.onboardedAt ? { onboardedAt: existing.onboardedAt } : {}),
+      ...(typeof nextDiversity === 'number' ? { diversity: nextDiversity } : {}),
       updatedAt: new Date().toISOString(),
     };
 

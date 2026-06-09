@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { Cluster, FeedbackSignal } from '@/lib/types';
+import { CATEGORY_META } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils/date';
 import Card from '@/components/ui/Card';
 import SourcePill from '@/components/ui/SourcePill';
@@ -29,6 +30,9 @@ export default function ClusterCard({
 }: ClusterCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const sourceCount = new Set(cluster.articles.map((a) => a.sourceName)).size;
+  const categoryMeta = cluster.representativeArticle.category
+    ? CATEGORY_META[cluster.representativeArticle.category]
+    : null;
 
   // Collapsed "not interested" state — keeps the action reversible in-session.
   if (feedback === 'hide') {
@@ -52,21 +56,25 @@ export default function ClusterCard({
     <Card className={`p-5 ${isRead ? 'opacity-60' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-3">
-        <div className="flex-1">
-          <h3 className="text-base font-semibold text-text-primary mb-1">
-            {cluster.title}
-          </h3>
-          <div className="flex items-center gap-2 text-sm text-text-muted">
-            <span className="inline-flex items-center gap-1 text-accent font-medium">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <div className="flex-1 min-w-0">
+          {/* Meta: category tag + "covered by N sources" badge */}
+          <div className="flex items-center gap-2 mb-2 text-xs">
+            {categoryMeta && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-bg-elevated text-text-secondary font-medium">
+                <span aria-hidden="true">{categoryMeta.icon}</span>
+                <span>{categoryMeta.label}</span>
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent-muted text-accent font-medium">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M9 7a3 3 0 116 0v3a3 3 0 11-6 0V7z" />
               </svg>
-              Covered by {sourceCount} {sourceCount === 1 ? 'source' : 'sources'}
+              {sourceCount} {sourceCount === 1 ? 'source' : 'sources'}
             </span>
-            <span>·</span>
-            <span className="font-mono">{cluster.articles.length}</span>
-            <span>articles</span>
           </div>
+          <h3 className="text-base font-semibold text-text-primary">
+            {cluster.title}
+          </h3>
         </div>
         {cluster.representativeArticle.imageUrl && (
           <img
@@ -76,7 +84,7 @@ export default function ClusterCard({
             onError={(e) => {
               e.currentTarget.style.display = 'none';
             }}
-            className="w-20 h-20 object-cover rounded-md flex-shrink-0 hidden sm:block bg-bg-elevated"
+            className="w-20 h-20 object-cover rounded-lg ring-1 ring-border flex-shrink-0 hidden sm:block bg-bg-elevated"
           />
         )}
       </div>

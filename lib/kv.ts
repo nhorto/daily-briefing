@@ -456,6 +456,7 @@ function normalizePreferences(prefs: Partial<UserPreferences>): UserPreferences 
     mutedKeywords: prefs.mutedKeywords ?? [],
     ...(prefs.interestBaseline ? { interestBaseline: prefs.interestBaseline } : {}),
     ...(prefs.onboardedAt ? { onboardedAt: prefs.onboardedAt } : {}),
+    ...(typeof prefs.diversity === 'number' ? { diversity: prefs.diversity } : {}),
     updatedAt: prefs.updatedAt ?? new Date().toISOString(),
   };
 }

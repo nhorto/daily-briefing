@@ -34,6 +34,8 @@ export default function Home() {
   const [fatigue, setFatigue] = useState<FatigueInput | null>(null);
   const [loading, setLoading] = useState(true);
   const [nudgeDismissed, setNudgeDismissed] = useState(true);
+  // Which "Today in 5" theme is expanded to show the stories behind it (#18).
+  const [expandedTheme, setExpandedTheme] = useState<string | null>(null);
   // Articles the user tapped "Less like this" on this session — flips the
   // why-chip to a confirmation without yanking the list out from under them.
   const [tunedDown, setTunedDown] = useState<Set<string>>(new Set());
@@ -134,6 +136,13 @@ export default function Home() {
     [briefing]
   );
 
+  // article id → article, so a "Today in 5" theme can resolve the stories behind it.
+  const articlesById = useMemo(() => {
+    const map = new Map<string, Article>();
+    for (const a of allArticles) map.set(a.id, a);
+    return map;
+  }, [allArticles]);
+
   // The finite, ranked "Top picks for today": engine-ranked, muted items removed,
   // capped at TOP_PICKS so the page ends with "you're all caught up".
   const topPicks: FeedItem[] = useMemo(() => {
@@ -218,16 +227,53 @@ export default function Home() {
                 Today in {todayInFive.length > 0 ? todayInFive.length : 5}
               </h2>
               {todayInFive.length > 0 ? (
-                <ul className="space-y-2.5">
-                  {todayInFive.map((theme) => (
-                    <li key={theme.name} className="flex gap-2.5 text-sm leading-relaxed">
-                      <span className="flex-shrink-0">{theme.icon}</span>
-                      <span className="text-text-secondary">
-                        <span className="font-semibold text-text-primary">{theme.name}.</span>{' '}
-                        {theme.summary}
-                      </span>
-                    </li>
-                  ))}
+                <ul className="space-y-1">
+                  {todayInFive.map((theme) => {
+                    const stories = theme.articleIds
+                      .map((id) => articlesById.get(id))
+                      .filter((a): a is Article => Boolean(a));
+                    const open = expandedTheme === theme.name;
+                    return (
+                      <li key={theme.name}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedTheme(open ? null : theme.name)}
+                          aria-expanded={open}
+                          className="w-full flex gap-2.5 text-sm leading-relaxed text-left py-1.5 group"
+                        >
+                          <span className="flex-shrink-0">{theme.icon}</span>
+                          <span className="text-text-secondary flex-1">
+                            <span className="font-semibold text-text-primary">{theme.name}.</span>{' '}
+                            {theme.summary}
+                            {stories.length > 0 && (
+                              <span className="text-text-muted whitespace-nowrap">
+                                {' '}
+                                <span className="text-accent group-hover:text-accent-hover transition-colors font-medium">
+                                  {open ? 'Hide' : `${stories.length} ${stories.length === 1 ? 'story' : 'stories'}`}
+                                </span>{' '}
+                                <span className="inline-block transition-transform" style={{ transform: open ? 'rotate(90deg)' : 'none' }}>›</span>
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                        {open && stories.length > 0 && (
+                          <ul className="mt-1 mb-2 ml-7 space-y-1.5 border-l border-border pl-3">
+                            {stories.map((a) => (
+                              <li key={a.id} className="text-sm">
+                                <Link
+                                  href={`/article/${a.id}`}
+                                  className="text-text-secondary hover:text-accent transition-colors line-clamp-1"
+                                >
+                                  {a.title}
+                                </Link>
+                                <span className="text-xs text-text-muted">{a.sourceName}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">

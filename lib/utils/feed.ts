@@ -4,10 +4,11 @@
  * cluster or a single article.
  */
 
+import { DEFAULT_DIVERSITY } from '../types';
 import type { Article, Briefing, Cluster, UserPreferences } from '../types';
 import { type FatigueInput, fatigueMultipliers } from './fatigue';
 import { decayPreferences, getPersonalizationScore } from './personalization';
-import { rankIndices, type RankSignal } from './ranking';
+import { lambdaForDiversity, rankIndices, type RankSignal } from './ranking';
 import { calculateTokenSimilarity } from './similarity';
 
 /** A row in the feed: either a multi-source topic cluster or a single article. */
@@ -100,5 +101,8 @@ export function rankFeedItems(
         opts.fatigue
       )
     : undefined;
-  return rankIndices(signals, similarity, { multipliers }).map((i) => items[i]!);
+  // The user's "Focused ↔ Diverse" dial drives MMR λ (a deliberate setting, so
+  // read it un-decayed). Unset → the default 0.7.
+  const mmrLambda = lambdaForDiversity(prefs.diversity ?? DEFAULT_DIVERSITY);
+  return rankIndices(signals, similarity, { multipliers, mmrLambda }).map((i) => items[i]!);
 }
