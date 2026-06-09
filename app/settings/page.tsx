@@ -17,6 +17,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     fetchPreferences();
@@ -143,6 +144,33 @@ export default function SettingsPage() {
       updatedAt: new Date().toISOString(),
     });
     setSaved(false);
+  }
+
+  // The full escape hatch: forget everything the engine learned (semantic
+  // profile, behavioral signals, per-article feedback, learned weights) and fall
+  // back to the stated onboarding baseline. Keeps muted keywords + onboarding.
+  async function handleResetEverything() {
+    if (
+      !confirm(
+        'Reset everything the briefing has learned about you?\n\nThis clears the semantic interest profile, your 👍/👎 history, reading/engagement signals, and learned source weights — back to your onboarding choices. Muted keywords and onboarding interests are kept. This cannot be undone.'
+      )
+    )
+      return;
+    setResetting(true);
+    setSaved(false);
+    try {
+      const response = await fetch('/api/preferences/reset', { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        setPreferences(data.preferences);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    } catch (error) {
+      console.error('Failed to reset personalization:', error);
+    } finally {
+      setResetting(false);
+    }
   }
 
   function handleSliderChange(category: ArticleCategory, value: number) {
@@ -387,6 +415,25 @@ export default function SettingsPage() {
                 No muted keywords yet. Add one above to filter out topics you never want to see.
               </p>
             )}
+          </Card>
+
+          {/* Reset personalization (full escape hatch) */}
+          <Card className="p-6 border-status-breaking/30">
+            <h2 className="text-base font-bold text-text-primary mb-1">Reset personalization</h2>
+            <p className="text-sm text-text-secondary mb-4">
+              Start fresh. Clears everything the briefing has learned — the semantic interest
+              profile, your 👍 / 👎 history, reading &amp; engagement signals, and learned source
+              weights — back to your onboarding choices. Your muted keywords and onboarding
+              interests are kept.
+            </p>
+            <button
+              type="button"
+              onClick={handleResetEverything}
+              disabled={resetting}
+              className="px-4 py-2 text-sm font-medium text-status-breaking border border-status-breaking/40 rounded-lg hover:bg-status-breaking/10 transition-colors disabled:opacity-50"
+            >
+              {resetting ? 'Resetting…' : 'Reset everything learned'}
+            </button>
           </Card>
 
           <p className="text-xs text-text-muted text-center">

@@ -721,6 +721,25 @@ export async function getProfileCentroids(): Promise<number[][] | null> {
   return [applyNeg(scaleVector(state.posSum, 1 / state.posCount))];
 }
 
+/** Clear the semantic interest profile (running sums + retained exemplars). */
+export async function clearProfile(): Promise<void> {
+  await store.del(KEYS.PROFILE);
+}
+
+/**
+ * Clear the behavioral signal stores (impression counts, the engagement-seen
+ * dedupe map, and click-rank samples) and the per-article feedback map. Used by
+ * the comprehensive "reset learning" so a fresh start really is fresh.
+ */
+export async function clearBehavioralSignals(): Promise<void> {
+  await Promise.all([
+    store.del(KEYS.IMPRESSIONS),
+    store.del(KEYS.ENGAGEMENT_SEEN),
+    store.del(KEYS.CLICK_RANKS),
+    store.del(KEYS.ARTICLE_FEEDBACK),
+  ]);
+}
+
 /**
  * Record that an implicit engagement signal of a given type has been applied for
  * an article, so repeated fires (re-renders, re-scrolls) don't multiply its
