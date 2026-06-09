@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { ArticleCategory, ProfileStats, Source, UserPreferences } from '@/lib/types';
-import { CATEGORY_META, DEFAULT_PREFERENCES } from '@/lib/types';
+import { CATEGORY_META, DEFAULT_DIVERSITY, DEFAULT_PREFERENCES } from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
 import Card from '@/components/ui/Card';
 import { SkeletonPage } from '@/components/ui/Skeleton';
@@ -76,6 +76,7 @@ export default function SettingsPage() {
           interests: preferences.interests,
           sources: preferences.sources,
           mutedKeywords: preferences.mutedKeywords,
+          diversity: preferences.diversity ?? DEFAULT_DIVERSITY,
         }),
       });
 
@@ -111,6 +112,33 @@ export default function SettingsPage() {
       if (data.success) setPreferences(data.preferences);
     } catch (error) {
       console.error('Failed to update muted keywords:', error);
+    }
+  }
+
+  // Feed-variety dial — update locally while dragging, persist on release (like a
+  // setting, not a per-article action). Sent through the same preferences PUT.
+  function handleDiversityChange(value: number) {
+    if (!preferences) return;
+    setPreferences({ ...preferences, diversity: value });
+  }
+
+  async function persistDiversity(value: number) {
+    if (!preferences) return;
+    try {
+      const response = await fetch('/api/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interests: preferences.interests,
+          sources: preferences.sources,
+          mutedKeywords: preferences.mutedKeywords,
+          diversity: value,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) setPreferences(data.preferences);
+    } catch (error) {
+      console.error('Failed to save feed variety:', error);
     }
   }
 
@@ -267,6 +295,33 @@ export default function SettingsPage() {
                 </p>
               </div>
             )}
+          </Card>
+
+          {/* Feed variety — the user-facing MMR λ dial */}
+          <Card className="p-6">
+            <h2 className="text-base font-bold text-text-primary mb-1">Feed variety</h2>
+            <p className="text-sm text-text-secondary mb-4">
+              How much your Top picks spread across topics. <strong>Focused</strong> shows the
+              strongest matches first, even if several are similar; <strong>Diverse</strong> mixes
+              in a wider range so the day isn’t five takes on one story.
+            </p>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={preferences?.diversity ?? DEFAULT_DIVERSITY}
+              onChange={(e) => handleDiversityChange(Number(e.target.value))}
+              onMouseUp={(e) => persistDiversity(Number((e.target as HTMLInputElement).value))}
+              onTouchEnd={(e) => persistDiversity(Number((e.target as HTMLInputElement).value))}
+              onKeyUp={(e) => persistDiversity(Number((e.target as HTMLInputElement).value))}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-bg-elevated accent-accent"
+            />
+            <div className="flex justify-between text-[10px] text-text-muted mt-1">
+              <span>Focused</span>
+              <span>Balanced</span>
+              <span>Diverse</span>
+            </div>
           </Card>
 
           {/* Sources — lives under Settings (configuration, not a daily destination) */}

@@ -59,6 +59,21 @@ export const RANK_DEFAULTS = {
   topRegion: 12,
 } as const;
 
+/** MMR λ at the two ends of the "Focused ↔ Diverse" dial. */
+export const DIVERSITY_LAMBDA_FOCUSED = 0.9; // relevance-first; allows topical repeats
+export const DIVERSITY_LAMBDA_DIVERSE = 0.4; // spreads hard across topics
+
+/**
+ * Map the user's 0-100 "Focused ↔ Diverse" dial to an MMR λ. 0 → most focused
+ * (high λ, relevance dominates), 100 → most diverse (low λ, spread topics). The
+ * range is clamped to a sane band so neither end degenerates (λ=1 stacks dupes;
+ * λ=0 ignores quality). The default dial value maps back to the original λ 0.7.
+ */
+export function lambdaForDiversity(diversity: number): number {
+  const d = Math.max(0, Math.min(100, diversity)) / 100;
+  return DIVERSITY_LAMBDA_FOCUSED - d * (DIVERSITY_LAMBDA_FOCUSED - DIVERSITY_LAMBDA_DIVERSE);
+}
+
 /**
  * Time-decay multiplier in (0, 1]; newer → closer to 1. Hacker-News-style
  * `1 / (age + 2)^gravity`. The +2 keeps brand-new items from spiking to infinity.

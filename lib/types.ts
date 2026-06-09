@@ -213,8 +213,14 @@ export interface UserPreferences {
   // unset until onboarding/settings set it, in which case it falls back to 50.
   interestBaseline?: Record<ArticleCategory, number>;
   onboardedAt?: string; // ISO timestamp when onboarding was completed (Phase 4)
+  // Feed diversity dial (0 = focused/relevance-first, 100 = diverse/spread topics).
+  // Drives the MMR λ in ranking; unset falls back to DEFAULT_DIVERSITY.
+  diversity?: number;
   updatedAt: string; // ISO timestamp
 }
+
+/** Default feed-diversity dial (0-100) → the default MMR λ of 0.7. */
+export const DEFAULT_DIVERSITY = 40;
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
   interests: {
