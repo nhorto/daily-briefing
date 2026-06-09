@@ -83,6 +83,14 @@ export default function Home() {
     return ranked.slice(0, TOP_PICKS);
   }, [briefing, preferences, fitScores]);
 
+  // "Today in 5" — the day's biggest themes as bullets (most-covered first).
+  const todayInFive = useMemo(() => {
+    if (!intelligence?.categories?.length) return [];
+    return [...intelligence.categories]
+      .sort((a, b) => b.articleIds.length - a.articleIds.length)
+      .slice(0, 5);
+  }, [intelligence]);
+
   return (
     <DashboardLayout>
       {loading ? (
@@ -100,15 +108,29 @@ export default function Home() {
             </p>
           </div>
 
-          {/* AI synthesis — the shape of the day, on top */}
-          {intelligence?.topStories && (
+          {/* "Today in 5" — the day's themes as bullets, on top */}
+          {(todayInFive.length > 0 || intelligence?.topStories) && (
             <Card className="p-6">
               <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-                The shape of today
+                Today in {todayInFive.length > 0 ? todayInFive.length : 5}
               </h2>
-              <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
-                {intelligence.topStories}
-              </div>
+              {todayInFive.length > 0 ? (
+                <ul className="space-y-2.5">
+                  {todayInFive.map((theme) => (
+                    <li key={theme.name} className="flex gap-2.5 text-sm leading-relaxed">
+                      <span className="flex-shrink-0">{theme.icon}</span>
+                      <span className="text-text-secondary">
+                        <span className="font-semibold text-text-primary">{theme.name}.</span>{' '}
+                        {theme.summary}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                  {intelligence?.topStories}
+                </div>
+              )}
             </Card>
           )}
 
