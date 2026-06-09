@@ -61,5 +61,131 @@
     "authority": 90,
     "isActive": true,
     "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "seed-deepmind",
+    "name": "Google DeepMind",
+    "url": "https://deepmind.google/blog/rss.xml",
+    "type": "rss",
+    "authority": 90,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-google-research",
+    "name": "Google Research",
+    "url": "https://research.google/blog/rss/",
+    "type": "rss",
+    "authority": 88,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-microsoft-research",
+    "name": "Microsoft Research",
+    "url": "https://www.microsoft.com/en-us/research/feed/",
+    "type": "rss",
+    "authority": 85,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-hugging-face",
+    "name": "Hugging Face",
+    "url": "https://huggingface.co/blog/feed.xml",
+    "type": "rss",
+    "authority": 80,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-bair",
+    "name": "Berkeley AI Research (BAIR)",
+    "url": "https://bair.berkeley.edu/blog/feed.xml",
+    "type": "atom",
+    "authority": 85,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-simon-willison",
+    "name": "Simon Willison",
+    "url": "https://simonwillison.net/atom/everything/",
+    "type": "atom",
+    "authority": 80,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-interconnects",
+    "name": "Interconnects",
+    "url": "https://www.interconnects.ai/feed",
+    "type": "rss",
+    "authority": 80,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-the-decoder",
+    "name": "The Decoder",
+    "url": "https://the-decoder.com/feed/",
+    "type": "rss",
+    "authority": 70,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-marktechpost",
+    "name": "MarkTechPost",
+    "url": "https://www.marktechpost.com/feed/",
+    "type": "rss",
+    "authority": 65,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-import-ai",
+    "name": "Import AI",
+    "url": "https://jack-clark.net/feed/",
+    "type": "rss",
+    "authority": 82,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-ahead-of-ai",
+    "name": "Ahead of AI",
+    "url": "https://magazine.sebastianraschka.com/feed",
+    "type": "rss",
+    "authority": 80,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-toms-hardware",
+    "name": "Tom's Hardware",
+    "url": "https://www.tomshardware.com/feeds.xml",
+    "type": "rss",
+    "authority": 82,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-notebookcheck",
+    "name": "Notebookcheck",
+    "url": "https://www.notebookcheck.net/News.152.100.html",
+    "type": "rss",
+    "authority": 78,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
+  },
+  {
+    "id": "seed-xda",
+    "name": "XDA",
+    "url": "https://www.xda-developers.com/feed/",
+    "type": "rss",
+    "authority": 70,
+    "isActive": true,
+    "createdAt": "2026-06-08T00:00:00.000Z"
   }
 ]
