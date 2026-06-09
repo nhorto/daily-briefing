@@ -66,3 +66,89 @@ export function normalizeVector(v: number[]): number[] {
   if (norm === 0) return v.slice();
   return v.map((x) => x / norm);
 }
+
+/**
+ * k-means clustering over vectors, scored by cosine similarity — used to build a
+ * *multi-centroid* interest profile so a niche interest isn't averaged into mush
+ * (Phase 5 / §A5). Returns the cluster means (un-normalized; the caller decides
+ * whether to normalize). Empty clusters are dropped, so the result may have fewer
+ * than `k` centroids.
+ *
+ * Deterministic by design (no randomness): seeds with farthest-first traversal
+ * (Gonzalez) — start at the first vector, then repeatedly add the vector least
+ * similar to every chosen seed — then runs Lloyd iterations to convergence. The
+ * determinism keeps the profile stable run-to-run and makes it unit-testable.
+ */
+export function kMeans(vectors: number[][], k: number, maxIters = 25): number[][] {
+  const n = vectors.length;
+  if (n === 0) return [];
+  if (k <= 1) {
+    const mean = meanVector(vectors);
+    return mean ? [mean] : [];
+  }
+  const kk = Math.min(k, n);
+
+  // Farthest-first seeding (deterministic): maximize spread between seeds.
+  const seedIdx: number[] = [0];
+  while (seedIdx.length < kk) {
+    let pick = -1;
+    let pickScore = Infinity; // we want the vector whose *best* seed-similarity is lowest
+    for (let i = 0; i < n; i++) {
+      if (seedIdx.includes(i)) continue;
+      let bestSim = -Infinity;
+      for (const s of seedIdx) {
+        const sim = cosineSimilarity(vectors[i] ?? [], vectors[s] ?? []);
+        if (sim > bestSim) bestSim = sim;
+      }
+      if (bestSim < pickScore) {
+        pickScore = bestSim;
+        pick = i;
+      }
+    }
+    if (pick === -1) break;
+    seedIdx.push(pick);
+  }
+  let centroids = seedIdx.map((i) => (vectors[i] ?? []).slice());
+
+  // Lloyd iterations: assign by max cosine, recompute means, stop when stable.
+  let assignment = new Array<number>(n).fill(-1);
+  for (let iter = 0; iter < maxIters; iter++) {
+    let changed = false;
+    const next = new Array<number>(n);
+    for (let i = 0; i < n; i++) {
+      let best = 0;
+      let bestSim = -Infinity;
+      for (let c = 0; c < centroids.length; c++) {
+        const sim = cosineSimilarity(vectors[i] ?? [], centroids[c] ?? []);
+        if (sim > bestSim) {
+          bestSim = sim;
+          best = c;
+        }
+      }
+      next[i] = best;
+      if (best !== assignment[i]) changed = true;
+    }
+    assignment = next;
+
+    const groups: number[][][] = centroids.map(() => []);
+    for (let i = 0; i < n; i++) groups[assignment[i] ?? 0]?.push(vectors[i] ?? []);
+    centroids = centroids.map((prev, c) => meanVector(groups[c] ?? []) ?? prev);
+
+    if (!changed) break;
+  }
+
+  // Drop centroids that ended up with no members.
+  const counts = new Array<number>(centroids.length).fill(0);
+  for (let i = 0; i < n; i++) counts[assignment[i] ?? 0] = (counts[assignment[i] ?? 0] ?? 0) + 1;
+  return centroids.filter((_, c) => (counts[c] ?? 0) > 0);
+}
+
+/** The maximum cosine similarity of a vector to any of the given centroids. */
+export function maxCosineSimilarity(v: number[], centroids: number[][]): number {
+  let best = -Infinity;
+  for (const c of centroids) {
+    const sim = cosineSimilarity(v, c);
+    if (sim > best) best = sim;
+  }
+  return best === -Infinity ? 0 : best;
+}

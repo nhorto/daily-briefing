@@ -247,11 +247,31 @@ export interface ProfileState {
   negSum: number[]; // sum of disliked/hidden embeddings
   negCount: number;
   dim: number; // embedding dimension (resets profile if it changes)
+  // Recent liked embeddings, capped & newest-first (Phase 5). The running sums
+  // above only yield a single mean; these retained exemplars let the profile be
+  // split into k interest centroids (k-means) so a niche taste isn't averaged
+  // away. Optional for back-compat — older profiles built before this field fall
+  // back to the single centroid until enough new likes accumulate.
+  posVectors?: number[][];
   updatedAt: string;
 }
 
 /** How strongly disliked content pushes the profile away (the λ in pos − λ·neg). */
 export const PROFILE_DISLIKE_WEIGHT = 0.4;
+
+/**
+ * Multi-cluster interest profile (Phase 5 / §A5). Until this many liked exemplars
+ * accumulate, the profile stays a single centroid (mean of likes); past it, likes
+ * are split into k≈3–6 interest centroids and personal fit is scored by the *max*
+ * similarity to any centroid — so a niche interest gets its own cluster instead of
+ * being averaged into the dominant one.
+ */
+export const MULTI_CLUSTER_MIN_LIKES = 20;
+/** Min/max number of interest centroids once multi-cluster mode kicks in. */
+export const PROFILE_MIN_CENTROIDS = 3;
+export const PROFILE_MAX_CENTROIDS = 6;
+/** How many recent liked embeddings to retain for k-means (newest-first cap). */
+export const PROFILE_VECTORS_CAP = 200;
 
 /** How far each feedback signal nudges the relevant weights (clamped 0-100). */
 export const FEEDBACK_DELTAS: Record<FeedbackSignal, number> = {
