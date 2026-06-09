@@ -260,6 +260,20 @@ export interface ProfileState {
 export const PROFILE_DISLIKE_WEIGHT = 0.4;
 
 /**
+ * A legible snapshot of the semantic profile for the Settings UI — so the engine
+ * isn't a black box and the user can see when multi-cluster mode kicks in.
+ */
+export interface ProfileStats {
+  ready: boolean; // has at least one positive signal
+  likes: number; // positive signals folded in (posCount)
+  dislikes: number; // negative signals folded in (negCount)
+  exemplars: number; // retained liked vectors available for k-means
+  centroids: number; // active interest clusters (1 = single centroid)
+  multiClusterActive: boolean; // true once split into >1 centroid
+  multiClusterThreshold: number; // exemplars needed before multi-cluster (= MULTI_CLUSTER_MIN_LIKES)
+}
+
+/**
  * Multi-cluster interest profile (Phase 5 / §A5). Until this many liked exemplars
  * accumulate, the profile stays a single centroid (mean of likes); past it, likes
  * are split into k≈3–6 interest centroids and personal fit is scored by the *max*

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { ArticleCategory, Source, UserPreferences } from '@/lib/types';
+import type { ArticleCategory, ProfileStats, Source, UserPreferences } from '@/lib/types';
 import { CATEGORY_META, DEFAULT_PREFERENCES } from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
 import Card from '@/components/ui/Card';
@@ -13,6 +13,7 @@ const CATEGORIES = Object.keys(CATEGORY_META) as ArticleCategory[];
 export default function SettingsPage() {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
+  const [profileStats, setProfileStats] = useState<ProfileStats | null>(null);
   const [keywordInput, setKeywordInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -22,7 +23,18 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchPreferences();
     fetchSources();
+    fetchProfileStats();
   }, []);
+
+  async function fetchProfileStats() {
+    try {
+      const response = await fetch('/api/profile');
+      const data = await response.json();
+      if (data.success && data.stats) setProfileStats(data.stats as ProfileStats);
+    } catch (error) {
+      console.error('Failed to fetch profile stats:', error);
+    }
+  }
 
   async function fetchPreferences() {
     try {
@@ -165,6 +177,7 @@ export default function SettingsPage() {
         setPreferences(data.preferences);
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
+        await fetchProfileStats();
       }
     } catch (error) {
       console.error('Failed to reset personalization:', error);
@@ -210,6 +223,51 @@ export default function SettingsPage() {
               interested on each article. Higher weights surface those topics first.
             </p>
           </div>
+
+          {/* Personalization status — make the engine legible, not a black box */}
+          <Card className="p-6">
+            <h2 className="text-base font-bold text-text-primary mb-2">Personalization status</h2>
+            {!profileStats?.ready ? (
+              <p className="text-sm text-text-secondary">
+                Still learning. Semantic matching turns on after your first 👍 — until then,
+                Today ranks by importance and your category / source weights. Train it with
+                👍 / 👎 and by reading what you like.
+              </p>
+            ) : (
+              <div className="space-y-2 text-sm text-text-secondary">
+                <p>
+                  Your semantic profile is{' '}
+                  <span className="text-status-new font-medium">active</span>, learning from{' '}
+                  <span className="font-semibold text-text-primary">{profileStats.likes}</span>{' '}
+                  {profileStats.likes === 1 ? 'like' : 'likes'} and{' '}
+                  <span className="font-semibold text-text-primary">{profileStats.dislikes}</span>{' '}
+                  {profileStats.dislikes === 1 ? 'dislike' : 'dislikes'}.
+                </p>
+                <p>
+                  {profileStats.multiClusterActive ? (
+                    <>
+                      Tracking{' '}
+                      <span className="font-semibold text-text-primary">
+                        {profileStats.centroids}
+                      </span>{' '}
+                      distinct interest clusters — niche topics keep their own lane instead of
+                      being averaged away.
+                    </>
+                  ) : (
+                    <>
+                      Using a single interest profile for now. It splits into multiple clusters
+                      once you’ve liked {profileStats.multiClusterThreshold} items (
+                      <span className="font-mono">
+                        {Math.min(profileStats.exemplars, profileStats.multiClusterThreshold)}/
+                        {profileStats.multiClusterThreshold}
+                      </span>
+                      ).
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
+          </Card>
 
           {/* Sources — lives under Settings (configuration, not a daily destination) */}
           <Link

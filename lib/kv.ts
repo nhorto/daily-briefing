@@ -18,6 +18,7 @@ import type {
   EngagementType,
   FeedbackSignal,
   ProfileState,
+  ProfileStats,
   SavedArticle,
   Source,
   UserPreferences,
@@ -724,6 +725,35 @@ export async function getProfileCentroids(): Promise<number[][] | null> {
 /** Clear the semantic interest profile (running sums + retained exemplars). */
 export async function clearProfile(): Promise<void> {
   await store.del(KEYS.PROFILE);
+}
+
+/** A legible snapshot of the semantic profile for the Settings UI. */
+export async function getProfileStats(): Promise<ProfileStats> {
+  const state = await getProfileState();
+  const multiClusterThreshold = MULTI_CLUSTER_MIN_LIKES;
+  if (!state || state.posCount === 0) {
+    return {
+      ready: false,
+      likes: 0,
+      dislikes: state?.negCount ?? 0,
+      exemplars: 0,
+      centroids: 0,
+      multiClusterActive: false,
+      multiClusterThreshold,
+    };
+  }
+  const centroids = await getProfileCentroids();
+  const exemplars = state.posVectors?.length ?? 0;
+  const centroidCount = centroids?.length ?? 0;
+  return {
+    ready: true,
+    likes: state.posCount,
+    dislikes: state.negCount,
+    exemplars,
+    centroids: centroidCount,
+    multiClusterActive: exemplars >= multiClusterThreshold && centroidCount > 1,
+    multiClusterThreshold,
+  };
 }
 
 /**

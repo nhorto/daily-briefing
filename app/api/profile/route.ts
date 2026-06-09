@@ -9,22 +9,27 @@
  */
 
 import { NextResponse } from 'next/server';
-import { getProfileCentroids, getTodaysBriefing, getCachedEmbedding } from '@/lib/kv';
+import {
+  getProfileCentroids,
+  getProfileStats,
+  getTodaysBriefing,
+  getCachedEmbedding,
+} from '@/lib/kv';
 import { maxCosineSimilarity } from '@/lib/utils/vector';
 
 export async function GET() {
   try {
     // Multi-centroid interest profile (Phase 5): one centroid until ~20 likes,
     // then k≈3–6. Fit is the max cosine to any centroid so niche tastes count.
-    const centroids = await getProfileCentroids();
+    const [centroids, stats] = await Promise.all([getProfileCentroids(), getProfileStats()]);
     if (!centroids) {
       // Cold start: no positive signals yet — feed falls back to importance + affinity.
-      return NextResponse.json({ success: true, ready: false, fit: {} });
+      return NextResponse.json({ success: true, ready: false, fit: {}, stats });
     }
 
     const briefing = await getTodaysBriefing();
     if (!briefing) {
-      return NextResponse.json({ success: true, ready: true, fit: {} });
+      return NextResponse.json({ success: true, ready: true, fit: {}, stats });
     }
 
     const articles = [
@@ -39,7 +44,7 @@ export async function GET() {
       if (emb) fit[a.id] = maxCosineSimilarity(emb, centroids);
     });
 
-    return NextResponse.json({ success: true, ready: true, fit, centroids: centroids.length });
+    return NextResponse.json({ success: true, ready: true, fit, centroids: centroids.length, stats });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: (error as Error).message },
