@@ -83,6 +83,11 @@ export async function PUT(request: NextRequest) {
       interests,
       sources: sources ?? existing.sources,
       mutedKeywords: cleanedMuted ?? existing.mutedKeywords,
+      // Carry the deliberate onboarding prior + flag — they aren't part of the
+      // settings form, so omitting them here would silently wipe the stated
+      // baseline (and re-trigger the first-run nudge) on every Save.
+      ...(existing.interestBaseline ? { interestBaseline: existing.interestBaseline } : {}),
+      ...(existing.onboardedAt ? { onboardedAt: existing.onboardedAt } : {}),
       updatedAt: new Date().toISOString(),
     };
 

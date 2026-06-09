@@ -1,5 +1,6 @@
 import type { Article, ArticleCategory, FeedbackSignal, UserPreferences } from '../types';
 import {
+  DEFAULT_PREFERENCES,
   FEEDBACK_DELTAS,
   ONBOARDING_HALF_LIFE_DAYS,
   SCORE_WEIGHTS,
@@ -132,6 +133,32 @@ export function decayPreferences(
   }
 
   return { ...preferences, interests: decayedInterests, sources: decayedSources };
+}
+
+/**
+ * Reset everything the engine *learned* while keeping what the user *stated*.
+ * Returns new preferences with learned signal cleared: category interests fall
+ * back to the onboarding baseline (or neutral 50s if none) and learned source
+ * weights are wiped. The deliberate settings — muted keywords, the onboarding
+ * baseline, and the onboardedAt flag — are preserved. Pure.
+ *
+ * The matching clears of the *semantic* profile and behavioral signals
+ * (impressions, engagement, feedback) live in the storage layer; this only
+ * handles the preference model.
+ */
+export function resetLearnedPreferences(
+  preferences: UserPreferences,
+  now: string = new Date().toISOString()
+): UserPreferences {
+  const baseline = preferences.interestBaseline ?? DEFAULT_PREFERENCES.interests;
+  return {
+    interests: { ...DEFAULT_PREFERENCES.interests, ...baseline },
+    sources: {},
+    mutedKeywords: preferences.mutedKeywords,
+    ...(preferences.interestBaseline ? { interestBaseline: preferences.interestBaseline } : {}),
+    ...(preferences.onboardedAt ? { onboardedAt: preferences.onboardedAt } : {}),
+    updatedAt: now,
+  };
 }
 
 /**

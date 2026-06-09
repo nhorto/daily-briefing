@@ -18,6 +18,7 @@ import type {
   EngagementType,
   FeedbackSignal,
   ProfileState,
+  ProfileStats,
   SavedArticle,
   Source,
   UserPreferences,
@@ -719,6 +720,54 @@ export async function getProfileCentroids(): Promise<number[][] | null> {
 
   // Single-centroid fallback (cold-ish start or pre-Phase-5 profile).
   return [applyNeg(scaleVector(state.posSum, 1 / state.posCount))];
+}
+
+/** Clear the semantic interest profile (running sums + retained exemplars). */
+export async function clearProfile(): Promise<void> {
+  await store.del(KEYS.PROFILE);
+}
+
+/** A legible snapshot of the semantic profile for the Settings UI. */
+export async function getProfileStats(): Promise<ProfileStats> {
+  const state = await getProfileState();
+  const multiClusterThreshold = MULTI_CLUSTER_MIN_LIKES;
+  if (!state || state.posCount === 0) {
+    return {
+      ready: false,
+      likes: 0,
+      dislikes: state?.negCount ?? 0,
+      exemplars: 0,
+      centroids: 0,
+      multiClusterActive: false,
+      multiClusterThreshold,
+    };
+  }
+  const centroids = await getProfileCentroids();
+  const exemplars = state.posVectors?.length ?? 0;
+  const centroidCount = centroids?.length ?? 0;
+  return {
+    ready: true,
+    likes: state.posCount,
+    dislikes: state.negCount,
+    exemplars,
+    centroids: centroidCount,
+    multiClusterActive: exemplars >= multiClusterThreshold && centroidCount > 1,
+    multiClusterThreshold,
+  };
+}
+
+/**
+ * Clear the behavioral signal stores (impression counts, the engagement-seen
+ * dedupe map, and click-rank samples) and the per-article feedback map. Used by
+ * the comprehensive "reset learning" so a fresh start really is fresh.
+ */
+export async function clearBehavioralSignals(): Promise<void> {
+  await Promise.all([
+    store.del(KEYS.IMPRESSIONS),
+    store.del(KEYS.ENGAGEMENT_SEEN),
+    store.del(KEYS.CLICK_RANKS),
+    store.del(KEYS.ARTICLE_FEEDBACK),
+  ]);
 }
 
 /**

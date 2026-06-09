@@ -5,6 +5,7 @@ import {
   applyFeedback,
   applyAffinityNudge,
   decayPreferences,
+  resetLearnedPreferences,
   mapIntelligenceCategoryToSlug,
   isMuted,
 } from './personalization';
@@ -238,6 +239,52 @@ describe('decayPreferences', () => {
     const p: UserPreferences = { ...prefs, sources: { Source: 90 }, updatedAt: base };
     const before = JSON.stringify(p);
     decayPreferences(p, day(60));
+    expect(JSON.stringify(p)).toBe(before);
+  });
+});
+
+describe('resetLearnedPreferences', () => {
+  const now = '2026-07-01T00:00:00.000Z';
+
+  test('restores interests to the onboarding baseline and clears learned sources', () => {
+    const interestBaseline = { ...DEFAULT_PREFERENCES.interests, 'ai-ml': 75 } as Record<
+      ArticleCategory,
+      number
+    >;
+    const p: UserPreferences = {
+      ...prefs,
+      interests: { ...prefs.interests, 'ai-ml': 100, business: 5 }, // learned drift
+      sources: { TechCrunch: 90, Verge: 20 },
+      interestBaseline,
+      onboardedAt: '2026-06-01T00:00:00.000Z',
+      mutedKeywords: ['crypto'],
+    };
+    const reset = resetLearnedPreferences(p, now);
+    expect(reset.interests['ai-ml']).toBe(75); // back to baseline, not 100
+    expect(reset.interests.business).toBe(50); // baseline default
+    expect(reset.sources).toEqual({}); // learned source weights wiped
+    expect(reset.mutedKeywords).toEqual(['crypto']); // kept
+    expect(reset.interestBaseline).toEqual(interestBaseline); // kept
+    expect(reset.onboardedAt).toBe('2026-06-01T00:00:00.000Z'); // kept
+    expect(reset.updatedAt).toBe(now);
+  });
+
+  test('falls back to neutral 50s when there is no baseline', () => {
+    const p: UserPreferences = {
+      ...prefs,
+      interests: { ...prefs.interests, 'ai-ml': 100 },
+      sources: { TechCrunch: 90 },
+    };
+    const reset = resetLearnedPreferences(p, now);
+    for (const v of Object.values(reset.interests)) expect(v).toBe(50);
+    expect(reset.interestBaseline).toBeUndefined();
+    expect(reset.onboardedAt).toBeUndefined();
+  });
+
+  test('does not mutate the input', () => {
+    const p: UserPreferences = { ...prefs, sources: { Source: 90 } };
+    const before = JSON.stringify(p);
+    resetLearnedPreferences(p, now);
     expect(JSON.stringify(p)).toBe(before);
   });
 });
