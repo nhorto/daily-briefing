@@ -61,6 +61,18 @@ export interface Article {
   summary?: string; // AI-generated 1-sentence summary
   category?: ArticleCategory; // AI-assigned content category
   imageUrl?: string; // Thumbnail (feed media or og:image), if available
+  editorial?: EditorialVerdict; // LLM-as-editor "smell test" verdict (Phase 4)
+}
+
+/**
+ * The LLM-as-editor "smell test" verdict for a story (Phase 4). A cheap pass over
+ * the day's importance shortlist flags clickbait / soft news / near-duplicates so
+ * the curated "Today" surface can drop them — they remain visible in Browse, so
+ * the AI only *curates* over visible sources, it never hides the firehose.
+ */
+export interface EditorialVerdict {
+  drop: boolean; // true → omit from the "Today" top picks
+  reason?: string; // short why ("clickbait", "soft news", "duplicate of …")
 }
 
 /**

@@ -81,7 +81,10 @@ export default function Home() {
       muted.length > 0
         ? items.filter((it) => feedItemArticles(it).some((a) => !isMuted(a, muted)))
         : items;
-    const ranked = preferences ? rankFeedItems(visible, preferences, fitScores) : visible;
+    // Drop items the LLM-as-editor smell test flagged (Phase 4). They stay in
+    // Browse — Today is the curated surface, so the editor only trims it here.
+    const curated = visible.filter((it) => !feedItemLead(it).editorial?.drop);
+    const ranked = preferences ? rankFeedItems(curated, preferences, fitScores) : curated;
     return ranked.slice(0, TOP_PICKS);
   }, [briefing, preferences, fitScores]);
 
