@@ -5,10 +5,9 @@ import { usePathname } from 'next/navigation';
 import { format } from 'date-fns';
 
 const navLinks = [
-  { href: '/', label: 'Home' },
-  { href: '/briefing', label: 'Briefing' },
+  { href: '/', label: 'Today' },
+  { href: '/briefing', label: 'Browse' },
   { href: '/saved', label: 'Saved' },
-  { href: '/sources', label: 'Sources' },
 ];
 
 interface DashboardLayoutProps {

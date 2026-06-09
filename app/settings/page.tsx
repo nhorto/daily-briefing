@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import type { ArticleCategory, Source, UserPreferences } from '@/lib/types';
 import { CATEGORY_META, DEFAULT_PREFERENCES } from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -181,6 +182,20 @@ export default function SettingsPage() {
               interested on each article. Higher weights surface those topics first.
             </p>
           </div>
+
+          {/* Sources — lives under Settings (configuration, not a daily destination) */}
+          <Link
+            href="/sources"
+            className="flex items-center justify-between w-full px-5 py-4 bg-bg-surface border border-border rounded-lg hover:bg-bg-elevated hover:border-border-hover transition-colors"
+          >
+            <span>
+              <span className="block text-base font-bold text-text-primary">Sources</span>
+              <span className="block text-sm text-text-secondary mt-0.5">
+                Add, remove, and check the health of your content sources.
+              </span>
+            </span>
+            <span className="text-accent">→</span>
+          </Link>
 
           <Card className="p-6">
             <h2 className="text-base font-bold text-text-primary mb-5">

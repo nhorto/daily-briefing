@@ -29,7 +29,7 @@ export default function ChatPanel({
   clusterId,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isEmbedded = mode === 'global' || mode === 'article';
@@ -48,8 +48,13 @@ export default function ChatPanel({
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
+  // Keep the latest message in view by scrolling the chat's OWN container —
+  // never the page (scrollIntoView would yank a long page down to the chat on
+  // load). Skip the empty initial state so landing on a page stays at the top.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length === 0) return;
+    const c = messagesContainerRef.current;
+    if (c) c.scrollTop = c.scrollHeight;
   }, [messages]);
 
   // For modal mode, don't render if not open
@@ -110,7 +115,7 @@ export default function ChatPanel({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
         {messages.length === 0 && (
           <div className="text-center text-text-muted py-6">
             <p className="text-sm mb-3">Ask me anything about today's briefing!</p>
@@ -152,8 +157,6 @@ export default function ChatPanel({
             </div>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
