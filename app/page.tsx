@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import Link from 'next/link';
 import type { Briefing, DailyIntelligence, Article, UserPreferences } from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -22,18 +22,44 @@ import {
   feedItemTime,
   rankFeedItems,
 } from '@/lib/utils/feed';
+import { getTodayDateString } from '@/lib/utils/date';
 
 /** How many ranked picks the finite "Today" surface shows before "all caught up". */
 const TOP_PICKS = 15;
 
+interface DashboardData {
+  briefing: Briefing | null;
+  intelligence: DailyIntelligence | null;
+  preferences: UserPreferences | null;
+  fitScores: Record<string, number>;
+  fatigue: FatigueInput | null;
+}
+
+// Session cache of the Today data, keyed by date. Lives at module scope so it
+// survives client-side navigation (the module stays loaded): navigating back to
+// Today reuses it instantly — no refetch, no re-rank, no loading skeleton (and
+// therefore no skeleton to wedge on). It's refreshed quietly in the background
+// once older than the TTL, and cleared by a full page reload.
+let dashboardCache: { date: string; at: number; data: DashboardData } | null = null;
+const DASHBOARD_CACHE_TTL_MS = 60_000;
+
 export default function Home() {
-  const [briefing, setBriefing] = useState<Briefing | null>(null);
-  const [intelligence, setIntelligence] = useState<DailyIntelligence | null>(null);
-  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
-  const [fitScores, setFitScores] = useState<Record<string, number>>({});
-  const [fatigue, setFatigue] = useState<FatigueInput | null>(null);
-  const [loading, setLoading] = useState(true);
+  const today = getTodayDateString();
+  // Seed initial state from the session cache when we have today's data already,
+  // so a return visit paints content immediately instead of a loading skeleton.
+  const seed = dashboardCache?.date === today ? dashboardCache.data : null;
+
+  const [briefing, setBriefing] = useState<Briefing | null>(seed?.briefing ?? null);
+  const [intelligence, setIntelligence] = useState<DailyIntelligence | null>(seed?.intelligence ?? null);
+  const [preferences, setPreferences] = useState<UserPreferences | null>(seed?.preferences ?? null);
+  const [fitScores, setFitScores] = useState<Record<string, number>>(seed?.fitScores ?? {});
+  const [fatigue, setFatigue] = useState<FatigueInput | null>(seed?.fatigue ?? null);
+  const [loading, setLoading] = useState(!seed);
   const [nudgeDismissed, setNudgeDismissed] = useState(true);
+  // Mirror `loading` into a ref so a plain timer (outside React's commit cycle)
+  // can read the latest value — see the recovery watchdog below.
+  const loadingRef = useRef(!seed);
+  loadingRef.current = loading;
   // Which "Today in 5" theme is expanded to show the stories behind it (#18).
   const [expandedTheme, setExpandedTheme] = useState<string | null>(null);
   // Articles the user tapped "Less like this" on this session — flips the
@@ -87,6 +113,18 @@ export default function Home() {
   }
 
   useEffect(() => {
+    // Already have today's data cached and still fresh → reuse it, no refetch.
+    // (When stale we still refetch below, but quietly — the content is already
+    // on screen from the cache, so there's no skeleton and nothing to wedge on.)
+    if (dashboardCache?.date === today && Date.now() - dashboardCache.at < DASHBOARD_CACHE_TTL_MS) {
+      return;
+    }
+
+    // Guard against applying results to a render React has discarded mid
+    // client-side navigation — without it a stale resolution can race the live
+    // mount and the page can wedge on its loading skeleton.
+    let cancelled = false;
+
     async function fetchData() {
       try {
         const [briefingRes, intelligenceRes, prefsRes, profileRes, signalsRes] = await Promise.all([
@@ -96,37 +134,90 @@ export default function Home() {
           fetch('/api/profile'),
           fetch('/api/signals'),
         ]);
+        if (cancelled) return;
 
         const briefingData = await briefingRes.json();
-        if (briefingRes.ok && briefingData.success) setBriefing(briefingData.briefing);
-
         const intelligenceData = await intelligenceRes.json();
-        if (intelligenceRes.ok && intelligenceData.success) setIntelligence(intelligenceData.intelligence);
-
         const prefsData = await prefsRes.json();
-        if (prefsRes.ok && prefsData.success) setPreferences(prefsData.preferences);
-
         const profileData = await profileRes.json();
-        if (profileRes.ok && profileData.success && profileData.ready) {
-          setFitScores(profileData.fit || {});
-        }
-
         const signalsData = await signalsRes.json();
-        if (signalsRes.ok && signalsData.success) {
-          setFatigue({
-            impressions: signalsData.impressions ?? {},
-            engaged: new Set<string>(signalsData.engaged ?? []),
-          });
-        }
+        if (cancelled) return;
+
+        const nextBriefing = briefingRes.ok && briefingData.success ? (briefingData.briefing as Briefing) : null;
+        const nextIntelligence = intelligenceRes.ok && intelligenceData.success ? (intelligenceData.intelligence as DailyIntelligence) : null;
+        const nextPreferences = prefsRes.ok && prefsData.success ? (prefsData.preferences as UserPreferences) : null;
+        const nextFit = profileRes.ok && profileData.success && profileData.ready ? (profileData.fit || {}) : null;
+        const nextFatigue: FatigueInput | null = signalsRes.ok && signalsData.success
+          ? { impressions: signalsData.impressions ?? {}, engaged: new Set<string>(signalsData.engaged ?? []) }
+          : null;
+
+        // Only overwrite where we actually got data, so a transient failure
+        // doesn't blank a good value (or a good cached one).
+        if (nextBriefing) setBriefing(nextBriefing);
+        if (nextIntelligence) setIntelligence(nextIntelligence);
+        if (nextPreferences) setPreferences(nextPreferences);
+        if (nextFit) setFitScores(nextFit);
+        if (nextFatigue) setFatigue(nextFatigue);
+
+        // Refresh the session cache, falling back to the previous cache for any
+        // field that didn't come back this round.
+        const prev = dashboardCache?.date === today ? dashboardCache.data : null;
+        dashboardCache = {
+          date: today,
+          at: Date.now(),
+          data: {
+            briefing: nextBriefing ?? prev?.briefing ?? null,
+            intelligence: nextIntelligence ?? prev?.intelligence ?? null,
+            preferences: nextPreferences ?? prev?.preferences ?? null,
+            fitScores: nextFit ?? prev?.fitScores ?? {},
+            fatigue: nextFatigue ?? prev?.fatigue ?? null,
+          },
+        };
       } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
+        if (!cancelled) console.error('Failed to fetch dashboard data:', error);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     fetchData();
+    return () => {
+      cancelled = true;
+    };
+  }, [today]);
+
+  // Recovery watchdog. A client-side navigation back to this page can land on
+  // the loading skeleton and stay wedged: React stops committing updates to this
+  // tree for several seconds, so the fetch's `setLoading(false)` never takes —
+  // and a state-based retry can't help because its update is dropped the same
+  // way. The reliable escape is a mechanism outside React's commit cycle: a
+  // plain timer that reads `loadingRef` and, if still stuck, does a one-time
+  // full reload (a fresh document always loads cleanly). sessionStorage-guarded
+  // so it can never loop.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!loadingRef.current) return; // loaded fine — nothing to do
+      try {
+        if (sessionStorage.getItem('today-recovery-reload') === '1') return;
+        sessionStorage.setItem('today-recovery-reload', '1');
+      } catch {
+        return; // no sessionStorage — skip rather than risk a reload loop
+      }
+      window.location.reload();
+    }, 7000);
+    return () => clearTimeout(timer);
   }, []);
+
+  // Clear the one-time reload guard once we've successfully loaded, so a future
+  // wedged navigation can recover again.
+  useEffect(() => {
+    if (loading) return;
+    try {
+      sessionStorage.removeItem('today-recovery-reload');
+    } catch {
+      // best-effort
+    }
+  }, [loading]);
 
   const allArticles: Article[] = useMemo(
     () =>
