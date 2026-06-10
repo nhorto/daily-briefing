@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getPreferences, storePreferences } from '@/lib/kv';
 import type { ArticleCategory, UserPreferences } from '@/lib/types';
+import { MAX_TOP_PICKS, MIN_TOP_PICKS } from '@/lib/types';
 
 const VALID_CATEGORIES: ArticleCategory[] = [
   'ai-ml', 'business', 'science', 'security',
@@ -22,7 +23,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { interests, sources, mutedKeywords, diversity } = body;
+    const { interests, sources, mutedKeywords, diversity, topPicksCount } = body;
 
     if (!interests || typeof interests !== 'object') {
       return NextResponse.json(
@@ -86,8 +87,23 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // `topPicksCount` is optional. Validate when present; else keep stored.
+    if (
+      topPicksCount !== undefined &&
+      (typeof topPicksCount !== 'number' ||
+        !Number.isInteger(topPicksCount) ||
+        topPicksCount < MIN_TOP_PICKS ||
+        topPicksCount > MAX_TOP_PICKS)
+    ) {
+      return NextResponse.json(
+        { success: false, error: `topPicksCount must be an integer ${MIN_TOP_PICKS}-${MAX_TOP_PICKS} when provided` },
+        { status: 400 }
+      );
+    }
+
     const existing = await getPreferences();
     const nextDiversity = diversity ?? existing.diversity;
+    const nextTopPicks = topPicksCount ?? existing.topPicksCount;
     const preferences: UserPreferences = {
       interests,
       sources: sources ?? existing.sources,
@@ -98,6 +114,7 @@ export async function PUT(request: NextRequest) {
       ...(existing.interestBaseline ? { interestBaseline: existing.interestBaseline } : {}),
       ...(existing.onboardedAt ? { onboardedAt: existing.onboardedAt } : {}),
       ...(typeof nextDiversity === 'number' ? { diversity: nextDiversity } : {}),
+      ...(typeof nextTopPicks === 'number' ? { topPicksCount: nextTopPicks } : {}),
       updatedAt: new Date().toISOString(),
     };
 

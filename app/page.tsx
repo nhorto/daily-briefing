@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import Link from 'next/link';
 import type { Briefing, DailyIntelligence, Article, UserPreferences } from '@/lib/types';
+import { DEFAULT_TOP_PICKS } from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
 import ArticleCard from '@/components/ArticleCard';
 import ClusterCard from '@/components/ClusterCard';
@@ -23,9 +24,6 @@ import {
   rankFeedItems,
 } from '@/lib/utils/feed';
 import { getTodayDateString } from '@/lib/utils/date';
-
-/** How many ranked picks the finite "Today" surface shows before "all caught up". */
-const TOP_PICKS = 15;
 
 interface DashboardData {
   briefing: Briefing | null;
@@ -186,14 +184,17 @@ export default function Home() {
     };
   }, [today]);
 
-  // Recovery watchdog. A client-side navigation back to this page can land on
-  // the loading skeleton and stay wedged: React stops committing updates to this
-  // tree for several seconds, so the fetch's `setLoading(false)` never takes —
-  // and a state-based retry can't help because its update is dropped the same
-  // way. The reliable escape is a mechanism outside React's commit cycle: a
-  // plain timer that reads `loadingRef` and, if still stuck, does a one-time
-  // full reload (a fresh document always loads cleanly). sessionStorage-guarded
-  // so it can never loop.
+  // Recovery watchdog. A *cold* client-side navigation to this page (no session
+  // cache yet) can land on the loading skeleton and stay wedged: React stops
+  // committing updates to this tree for several seconds, so the fetch's
+  // `setLoading(false)` never takes — and a state-based retry can't help because
+  // its update is dropped the same way. The reliable escape is a mechanism
+  // outside React's commit cycle: a plain timer that reads `loadingRef` and, if
+  // still stuck, does a one-time full reload (a fresh full document load of Today
+  // is fast and never wedges). Kept short so the rare wedge self-heals in a few
+  // seconds rather than feeling like it "takes forever"; on localhost a genuine
+  // cold load finishes well under this, so it won't cut a working load short.
+  // sessionStorage-guarded (cleared once a load succeeds) so it can never loop.
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!loadingRef.current) return; // loaded fine — nothing to do
@@ -204,7 +205,7 @@ export default function Home() {
         return; // no sessionStorage — skip rather than risk a reload loop
       }
       window.location.reload();
-    }, 7000);
+    }, 3000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -235,9 +236,10 @@ export default function Home() {
   }, [allArticles]);
 
   // The finite, ranked "Top picks for today": engine-ranked, muted items removed,
-  // capped at TOP_PICKS so the page ends with "you're all caught up".
+  // capped at the user's configurable count so the page ends with "all caught up".
   const topPicks: FeedItem[] = useMemo(() => {
     if (!briefing) return [];
+    const limit = preferences?.topPicksCount ?? DEFAULT_TOP_PICKS;
     const items = buildFeedItems(briefing);
     const muted = preferences?.mutedKeywords ?? [];
     const visible =
@@ -257,7 +259,7 @@ export default function Home() {
     const ranked = preferences
       ? rankFeedItems(curated, preferences, fitScores, { fatigue: fatigue ?? undefined })
       : curated;
-    return ranked.slice(0, TOP_PICKS);
+    return ranked.slice(0, limit);
   }, [briefing, preferences, fitScores, fatigue]);
 
   // "Today in 5" — the day's biggest themes as bullets (most-covered first).
