@@ -12,23 +12,50 @@ import { SkeletonPage } from '@/components/ui/Skeleton';
 import { sortByPreference, isMuted } from '@/lib/utils/personalization';
 import { type FeedItem, feedItemTime, rankFeedItems } from '@/lib/utils/feed';
 import { getTodayDateString } from '@/lib/utils/date';
+import { readClientCache, writeClientCache } from '@/lib/utils/clientCache';
 import { regenerateBriefingAction } from './actions';
 
+const BRIEFING_CACHE_TTL_MS = 60_000;
+const BRIEFING_SUPPORT_KEY = 'briefing:support';
+const briefingCacheKey = (date?: string | null) => `briefing:byDate:${date || 'today'}`;
+
+// The page's non-briefing data (shared across dates). Cached as one bundle so a
+// return visit restores read/feedback/bookmark state without refetching.
+interface BriefingSupport {
+  readIds: Set<string>;
+  preferences: UserPreferences | null;
+  feedback: Record<string, FeedbackSignal>;
+  bookmarkedUrls: Set<string>;
+  availableDates: string[];
+  fitScores: Record<string, number>;
+}
+
 export default function BriefingPage() {
-  const [briefing, setBriefing] = useState<Briefing | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Seed initial state from the session cache so a return visit paints content
+  // immediately instead of a skeleton (and skips the refetch). The cache is only
+  // ever populated by a prior client-side fetch — never during SSR — so the
+  // server and a fresh full-load both start empty (no hydration mismatch).
+  const initialDate =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('date')
+      : null;
+  const briefingSeed = readClientCache<Briefing>(briefingCacheKey(initialDate), BRIEFING_CACHE_TTL_MS);
+  const supportSeed = readClientCache<BriefingSupport>(BRIEFING_SUPPORT_KEY, BRIEFING_CACHE_TTL_MS).data;
+
+  const [briefing, setBriefing] = useState<Briefing | null>(briefingSeed.data);
+  const [loading, setLoading] = useState(!briefingSeed.hit);
   const [error, setError] = useState<string | null>(null);
   const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
   const [selectedCategories, setSelectedCategories] = useState<Set<ArticleCategory>>(new Set());
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
-  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
-  const [feedback, setFeedback] = useState<Record<string, FeedbackSignal>>({});
-  const [bookmarkedUrls, setBookmarkedUrls] = useState<Set<string>>(new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(supportSeed?.readIds ?? new Set());
+  const [preferences, setPreferences] = useState<UserPreferences | null>(supportSeed?.preferences ?? null);
+  const [feedback, setFeedback] = useState<Record<string, FeedbackSignal>>(supportSeed?.feedback ?? {});
+  const [bookmarkedUrls, setBookmarkedUrls] = useState<Set<string>>(supportSeed?.bookmarkedUrls ?? new Set());
   const [sortMode, setSortMode] = useState<'time' | 'personalized'>('time');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [availableDates, setAvailableDates] = useState<string[]>(supportSeed?.availableDates ?? []);
   const [searchQuery, setSearchQuery] = useState('');
-  const [fitScores, setFitScores] = useState<Record<string, number>>({});
+  const [fitScores, setFitScores] = useState<Record<string, number>>(supportSeed?.fitScores ?? {});
 
   useEffect(() => {
     const dateParam =
@@ -36,15 +63,37 @@ export default function BriefingPage() {
         ? new URLSearchParams(window.location.search).get('date')
         : null;
     setSelectedDate(dateParam);
-    fetchBriefing(dateParam);
-    fetchReadIds();
-    fetchPreferences();
-    fetchFeedback();
-    fetchBookmarks();
-    fetchDates();
-    fetchProfileFit();
+
+    // Skip the briefing fetch when we already have this date cached and fresh.
+    if (!readClientCache<Briefing>(briefingCacheKey(dateParam), BRIEFING_CACHE_TTL_MS).fresh) {
+      fetchBriefing(dateParam);
+    }
+    // Skip the supporting fetches when the bundle is cached and fresh.
+    if (!readClientCache<BriefingSupport>(BRIEFING_SUPPORT_KEY, BRIEFING_CACHE_TTL_MS).fresh) {
+      fetchReadIds();
+      fetchPreferences();
+      fetchFeedback();
+      fetchBookmarks();
+      fetchDates();
+      fetchProfileFit();
+    }
     // Run once on mount; the fetch helpers are stable for this purpose.
   }, []);
+
+  // Keep the support bundle cache in sync with live state (including changes
+  // from read/feedback/bookmark actions), so a return visit restores the latest.
+  // Guard on `preferences` so we don't cache the empty pre-load state.
+  useEffect(() => {
+    if (!preferences) return;
+    writeClientCache<BriefingSupport>(BRIEFING_SUPPORT_KEY, {
+      readIds,
+      preferences,
+      feedback,
+      bookmarkedUrls,
+      availableDates,
+      fitScores,
+    });
+  }, [readIds, preferences, feedback, bookmarkedUrls, availableDates, fitScores]);
 
   async function fetchProfileFit() {
     try {
@@ -113,6 +162,7 @@ export default function BriefingPage() {
       }
 
       setBriefing(data.briefing);
+      writeClientCache<Briefing>(briefingCacheKey(date), data.briefing);
       setError(null);
     } catch (err) {
       setError((err as Error).message);

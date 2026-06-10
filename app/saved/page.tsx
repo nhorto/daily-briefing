@@ -8,29 +8,47 @@ import Card from '@/components/ui/Card';
 import { getSourceColor } from '@/components/ui/SourcePill';
 import { formatRelativeTime } from '@/lib/utils/date';
 import { SkeletonPage } from '@/components/ui/Skeleton';
+import { readClientCache, writeClientCache } from '@/lib/utils/clientCache';
+
+const SAVED_CACHE_KEY = 'saved:bookmarks';
+const SAVED_CACHE_TTL_MS = 60_000;
 
 export default function SavedPage() {
-  const [bookmarks, setBookmarks] = useState<SavedArticle[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from the session cache so a return visit paints instantly instead of
+  // showing a skeleton (and refetching).
+  const seed = readClientCache<SavedArticle[]>(SAVED_CACHE_KEY, SAVED_CACHE_TTL_MS);
+  const [bookmarks, setBookmarks] = useState<SavedArticle[]>(seed.data ?? []);
+  const [loading, setLoading] = useState(!seed.hit);
 
   useEffect(() => {
-    fetchBookmarks();
+    // Fresh cache → nothing to do. Otherwise refetch (quietly if we already have
+    // a cached list to show).
+    if (readClientCache<SavedArticle[]>(SAVED_CACHE_KEY, SAVED_CACHE_TTL_MS).fresh) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch('/api/bookmarks');
+        const data = await response.json();
+        if (!cancelled && data.success) {
+          const list = (data.bookmarks || []) as SavedArticle[];
+          setBookmarks(list);
+          writeClientCache(SAVED_CACHE_KEY, list);
+        }
+      } catch (error) {
+        if (!cancelled) console.error('Failed to fetch bookmarks:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  async function fetchBookmarks() {
-    try {
-      const response = await fetch('/api/bookmarks');
-      const data = await response.json();
-      if (data.success) setBookmarks(data.bookmarks || []);
-    } catch (error) {
-      console.error('Failed to fetch bookmarks:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleRemove(url: string) {
-    setBookmarks((prev) => prev.filter((b) => b.url !== url)); // optimistic
+    const next = bookmarks.filter((b) => b.url !== url);
+    setBookmarks(next); // optimistic
+    writeClientCache(SAVED_CACHE_KEY, next); // keep the cache in sync
     try {
       await fetch(`/api/bookmarks?url=${encodeURIComponent(url)}`, { method: 'DELETE' });
     } catch (error) {
