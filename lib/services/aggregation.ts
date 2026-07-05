@@ -58,7 +58,17 @@ export class NoActiveSourcesError extends Error {
   }
 }
 
-export async function runAggregation(): Promise<AggregationResult> {
+/**
+ * Options for a one-off aggregation run.
+ * `since` widens (or narrows) the lookback window: any ISO timestamp used as the
+ * RSS publish-date cutoff instead of the default 24-hour briefing window. The
+ * scheduled cron passes nothing, so daily runs keep the standard 6am–6am window.
+ */
+export interface AggregationOptions {
+  since?: string;
+}
+
+export async function runAggregation(opts?: AggregationOptions): Promise<AggregationResult> {
   const startTime = Date.now();
 
   const sources = await getActiveSources();
@@ -67,7 +77,14 @@ export async function runAggregation(): Promise<AggregationResult> {
   console.log(`[Aggregation] ${sources.length} active sources`);
 
   const today = getTodayDateString();
-  const { start, end } = getBriefingTimeWindow(today);
+  const defaultWindow = getBriefingTimeWindow(today);
+  // A custom `since` overrides only the window start (the RSS cutoff); the end
+  // becomes "now" so the window reads as "since … until now".
+  const start = opts?.since ?? defaultWindow.start;
+  const end = opts?.since ? new Date().toISOString() : defaultWindow.end;
+  if (opts?.since) {
+    console.log(`[Aggregation] Custom window: ${start} → ${end}`);
+  }
 
   // Fetch from all sources in parallel
   const { articles: fetchedArticles, errors: fetchErrors } = await fetchFromMultipleSources(
