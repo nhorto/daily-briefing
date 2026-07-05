@@ -457,6 +457,7 @@ function normalizePreferences(prefs: Partial<UserPreferences>): UserPreferences 
     ...(prefs.interestBaseline ? { interestBaseline: prefs.interestBaseline } : {}),
     ...(prefs.onboardedAt ? { onboardedAt: prefs.onboardedAt } : {}),
     ...(typeof prefs.diversity === 'number' ? { diversity: prefs.diversity } : {}),
+    ...(typeof prefs.topPicksCount === 'number' ? { topPicksCount: prefs.topPicksCount } : {}),
     updatedAt: prefs.updatedAt ?? new Date().toISOString(),
   };
 }

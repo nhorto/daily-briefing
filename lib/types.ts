@@ -61,6 +61,7 @@ export interface Article {
   summary?: string; // AI-generated 1-sentence summary
   category?: ArticleCategory; // AI-assigned content category
   imageUrl?: string; // Thumbnail (feed media or og:image), if available
+  commentsUrl?: string; // Discussion/comments thread URL (e.g. the HN item page), when the feed provides one
   editorial?: EditorialVerdict; // LLM-as-editor "smell test" verdict (Phase 4)
 }
 
@@ -216,11 +217,20 @@ export interface UserPreferences {
   // Feed diversity dial (0 = focused/relevance-first, 100 = diverse/spread topics).
   // Drives the MMR λ in ranking; unset falls back to DEFAULT_DIVERSITY.
   diversity?: number;
+  // How many ranked "Top picks" the Today surface shows. Unset falls back to
+  // DEFAULT_TOP_PICKS; configurable in Settings so a busy day can surface more.
+  topPicksCount?: number;
   updatedAt: string; // ISO timestamp
 }
 
 /** Default feed-diversity dial (0-100) → the default MMR λ of 0.7. */
 export const DEFAULT_DIVERSITY = 40;
+
+/** Default number of Top picks shown on Today when the user hasn't set one. */
+export const DEFAULT_TOP_PICKS = 15;
+/** Allowed range for the user-configurable Top picks count. */
+export const MIN_TOP_PICKS = 5;
+export const MAX_TOP_PICKS = 50;
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
   interests: {

@@ -19,10 +19,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  console.log('[Cron] Starting daily content aggregation...');
+  // Optional `?days=N` widens the lookback to N days ago → now (default: the
+  // standard 24-hour briefing window). Used for manual catch-up runs after a gap.
+  const daysParam = request.nextUrl.searchParams.get('days');
+  let opts: { since?: string } | undefined;
+  if (daysParam) {
+    const days = Number(daysParam);
+    if (Number.isFinite(days) && days > 0) {
+      opts = { since: new Date(Date.now() - days * 86_400_000).toISOString() };
+    }
+  }
+
+  console.log(`[Cron] Starting content aggregation${opts ? ` (last ${daysParam} days)` : ''}...`);
 
   try {
-    const result = await runAggregation();
+    const result = await runAggregation(opts);
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof NoActiveSourcesError) {

@@ -3,7 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { ArticleCategory, ProfileStats, Source, UserPreferences } from '@/lib/types';
-import { CATEGORY_META, DEFAULT_DIVERSITY, DEFAULT_PREFERENCES } from '@/lib/types';
+import {
+  CATEGORY_META,
+  DEFAULT_DIVERSITY,
+  DEFAULT_PREFERENCES,
+  DEFAULT_TOP_PICKS,
+  MAX_TOP_PICKS,
+  MIN_TOP_PICKS,
+} from '@/lib/types';
 import DashboardLayout from '@/components/DashboardLayout';
 import Card from '@/components/ui/Card';
 import { SkeletonPage } from '@/components/ui/Skeleton';
@@ -139,6 +146,32 @@ export default function SettingsPage() {
       if (data.success) setPreferences(data.preferences);
     } catch (error) {
       console.error('Failed to save feed variety:', error);
+    }
+  }
+
+  // Top-picks count — same drag-locally / persist-on-release pattern as the dials.
+  function handleTopPicksChange(value: number) {
+    if (!preferences) return;
+    setPreferences({ ...preferences, topPicksCount: value });
+  }
+
+  async function persistTopPicks(value: number) {
+    if (!preferences) return;
+    try {
+      const response = await fetch('/api/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interests: preferences.interests,
+          sources: preferences.sources,
+          mutedKeywords: preferences.mutedKeywords,
+          topPicksCount: value,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) setPreferences(data.preferences);
+    } catch (error) {
+      console.error('Failed to save top picks count:', error);
     }
   }
 
@@ -321,6 +354,37 @@ export default function SettingsPage() {
               <span>Focused</span>
               <span>Balanced</span>
               <span>Diverse</span>
+            </div>
+          </Card>
+
+          {/* Top picks count — how many ranked picks the Today surface shows */}
+          <Card className="p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-base font-bold text-text-primary">Top picks shown</h2>
+              <span className="text-sm font-mono text-text-muted">
+                {preferences?.topPicksCount ?? DEFAULT_TOP_PICKS}
+              </span>
+            </div>
+            <p className="text-sm text-text-secondary mb-4">
+              How many ranked stories <strong>Today</strong> lists before “you’re all caught up.”
+              Raise it on busy days when more than the default is worth a look.
+            </p>
+            <input
+              type="range"
+              min={MIN_TOP_PICKS}
+              max={MAX_TOP_PICKS}
+              step={5}
+              value={preferences?.topPicksCount ?? DEFAULT_TOP_PICKS}
+              onChange={(e) => handleTopPicksChange(Number(e.target.value))}
+              onMouseUp={(e) => persistTopPicks(Number((e.target as HTMLInputElement).value))}
+              onTouchEnd={(e) => persistTopPicks(Number((e.target as HTMLInputElement).value))}
+              onKeyUp={(e) => persistTopPicks(Number((e.target as HTMLInputElement).value))}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-bg-elevated accent-accent"
+            />
+            <div className="flex justify-between text-[10px] text-text-muted mt-1">
+              <span>{MIN_TOP_PICKS}</span>
+              <span>Default {DEFAULT_TOP_PICKS}</span>
+              <span>{MAX_TOP_PICKS}</span>
             </div>
           </Card>
 

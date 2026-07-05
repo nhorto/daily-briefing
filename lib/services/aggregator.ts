@@ -91,6 +91,7 @@ async function fetchRSSFeed(source: Source, sinceTimestamp?: string): Promise<Ar
       sourceAuthority: source.authority,
       fetchedAt: new Date().toISOString(),
       imageUrl: extractImageFromRssItem(item, source.url),
+      commentsUrl: extractCommentsUrl(item),
     });
   }
 
@@ -375,6 +376,24 @@ export function extractImageFromRssItem(item: any, baseUrl: string): string | un
   const html: string = item['content:encoded'] || item.content || '';
   const match = /<img[^>]+src=["']([^"']+)["']/i.exec(html);
   if (match?.[1]) return absolutizeUrl(decodeEntities(match[1]), baseUrl);
+
+  return undefined;
+}
+
+/**
+ * The discussion/comments thread URL for an RSS item, when the feed provides one.
+ * Standard RSS exposes it as <comments> (rss-parser maps it to `item.comments`) —
+ * e.g. Hacker News points it at the HN item page while `item.link` is the external
+ * article. Falls back to scanning the item HTML for an explicit comments anchor so
+ * hnrss-style feeds (which embed a "Comments URL" link) work too.
+ */
+export function extractCommentsUrl(item: any): string | undefined {
+  const direct = typeof item?.comments === 'string' ? item.comments.trim() : '';
+  if (/^https?:\/\//i.test(direct)) return direct;
+
+  const html: string = item?.['content:encoded'] || item?.content || item?.description || '';
+  const match = /href=["']([^"']*(?:item\?id=|\/comments(?:\/|$)|\/discussion)[^"']*)["']/i.exec(html);
+  if (match?.[1]) return match[1];
 
   return undefined;
 }
